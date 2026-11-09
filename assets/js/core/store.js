@@ -30,7 +30,11 @@
         course: '1º curso',
         plan: 'premium',
         avatar: '🎓',
-        joinedAt: U.today()
+        joinedAt: U.today(),
+        /* true cuando el usuario ya pasó (u omitió) el asistente de
+           bienvenida. Si no, se muestra al entrar. */
+        onboarded: false,
+        municipio: ''
       },
       settings: {
         theme: 'light',
@@ -224,6 +228,21 @@
       state = merge(defaults(), Studia.seed.build());
       state.version = SCHEMA_VERSION;
       notify();
+    },
+
+    /** Deja la cuenta en blanco (sin datos de ejemplo): se usa en el
+        asistente de bienvenida y en Ajustes → "Empezar de cero". */
+    startFresh: function () {
+      var name = (state && state.profile && state.profile.name) || 'Estudiante';
+      var initials = (state && state.profile && state.profile.initials) || 'ES';
+      state = defaults();
+      state.profile.name = name;
+      state.profile.initials = initials;
+      state.profile.onboarded = true;
+      state.profile.plan = 'premium';   // modo creadores hasta que haya pagos
+      state.version = SCHEMA_VERSION;
+      notify();
+      return state;
     },
 
     /* --------------- Copia de seguridad --------------- */

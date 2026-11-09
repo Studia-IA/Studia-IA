@@ -160,6 +160,10 @@
 
     user: function () { return current; },
     email: function () { return (current && current.email) || ''; },
+    /** Nombre real guardado en user_metadata al registrarse. */
+    name: function () {
+      return (current && current.user_metadata && current.user_metadata.name) || '';
+    },
     /** El cliente Supabase (null hasta init()). */
     client: function () { return client; },
 
@@ -190,13 +194,16 @@
       });
     },
 
-    /** Alta nueva. El trigger de Supabase crea el perfil 'free'. */
-    signUp: function (email, password) {
+    /** Alta nueva. El trigger de Supabase crea el perfil 'free'.
+        `name` se guarda en user_metadata para mostrarlo en la app. */
+    signUp: function (email, password, name) {
       if (!client) return Promise.reject(new Error('Supabase no está listo.'));
-      return client.auth.signUp({
+      var payload = {
         email: String(email).trim().toLowerCase(),
         password: String(password)
-      }).then(function (r) {
+      };
+      if (name) payload.options = { data: { name: String(name).trim() } };
+      return client.auth.signUp(payload).then(function (r) {
         if (r.error) throw r.error;
         if (r.data.user && r.data.session) setUser(r.data.user);
         return r.data;
