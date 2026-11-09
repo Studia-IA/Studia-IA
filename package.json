@@ -1,6 +1,6 @@
 {
   "name": "studia-ia",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Studia-IA · prototipo sin dependencias (HTML, CSS y JS clásico)",
   "scripts": {

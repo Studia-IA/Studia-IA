@@ -167,14 +167,21 @@
 
       var list = U.h('div.cal__events');
       evs.slice(0, 3).forEach(function (e) {
-        list.appendChild(U.h('div.cal__event.cal__event--' + e.type, {
-          onclick: function (ev) { ev.stopPropagation(); openEventForm(e); }
+        list.appendChild(U.h('button.cal__event.cal__event--' + e.type, {
+          type: 'button',
+          title: e.title,
+          'aria-label': U.fmtDate(cell.iso, { weekday: true }) + ' · abrir «' + e.title + '»',
+          onclick: function (ev) { ev.stopPropagation(); view.selected = cell.iso; openEventForm(e); }
         }, [
           e.start ? U.h('span.mono', { style: { opacity: .75, fontSize: '.66rem' } }, e.start.slice(0, 5)) : null,
           U.h('span.truncate', e.title)
         ]));
       });
-      if (evs.length > 3) list.appendChild(U.h('div.cal__more', '+' + (evs.length - 3) + ' más'));
+      if (evs.length > 3) list.appendChild(U.h('button.cal__more', {
+        type: 'button',
+        'aria-label': U.fmtDate(cell.iso, { weekday: true }) + ' · ver los ' + evs.length + ' eventos del día',
+        onclick: function (ev) { ev.stopPropagation(); view.selected = cell.iso; refresh(); }
+      }, '+' + (evs.length - 3) + ' más'));
 
       var node = U.h('button', {
         class: classes.join(' '),
