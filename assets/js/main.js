@@ -849,6 +849,8 @@
         if (user) { if (!appStarted) openApp(); }
         else { appStarted = false; drawLogin(); }
       });
+      clearTimeout(t);
+      hideBoot();                       // sin usuario → no quedarse "Cargando…"
       if (Studia.auth.user()) openApp();
       else drawLogin();
     });

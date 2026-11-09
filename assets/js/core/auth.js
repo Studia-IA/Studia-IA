@@ -7,8 +7,7 @@
    el Row Level Security de Supabase.
 
    API:
-     Studia.auth.ready            → Promise<boolean> (SDK + proyecto configurado)
-     Studia.auth.init()           → crea el cliente Supabase
+     Studia.auth.init()           → crea el cliente y detecta la sesión
      Studia.auth.user()           → usuario actual o null
      Studia.auth.email()          → email del usuario o ''
      Studia.auth.token()          → JWT actual o ''
@@ -96,16 +95,67 @@
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
       });
 
+      /* El listener se registra ANTES de leer la sesión inicial: así no se
+         pierde el evento INITIAL_SESSION ni se entra en la carrera conocida
+         de Supabase (llamar getSession dentro del callback = deadlock). */
       client.auth.onAuthStateChange(function (_event, session) {
         setUser(session ? session.user : null);
       });
 
-      return client.auth.getSession()
-        .then(function (r) {
-          var session = r && r.data && r.data.session;
-          setUser(session ? session.user : null);
-          return !!current;
+      return auth._loadInitialSession();
+    },
+
+    /* Lee la sesión inicial con timeout y recuperación de sesión corrupta.
+       getSession() es local, pero con una clave de localStorage corrupta el
+       SDK puede colgarse o devolver null: si tarda o falla, se limpia la
+       sesión y se sigue sin usuario (login) en vez de quedarse cargando. */
+    _loadInitialSession: function () {
+      var TIMEOUT_MS = 6000;
+      var timer = null;
+      var settled = false;
+
+      var check = client.auth.getSession().then(function (r) {
+        if (settled) return false;                 // ya resolvimos por timeout
+        var session = r && r.data && r.data.session;
+        setUser(session ? session.user : null);
+        if (!session) auth._clearStoredSession();  // clave corrupta o inexistente
+        return !!current;
+      }).catch(function (e) {
+        if (settled) return false;
+        console.warn('[Studia.auth] Sesión no válida, se limpia:', e && e.message);
+        auth._clearStoredSession();
+        setUser(null);
+        return false;
+      });
+
+      var timeout = new Promise(function (_, reject) {
+        timer = setTimeout(function () { reject(new Error('getSession agotó el tiempo')); }, TIMEOUT_MS);
+      });
+
+      return Promise.race([check, timeout]).then(function (val) {
+        settled = true;
+        clearTimeout(timer);
+        return val;
+      }, function (e) {
+        settled = true;
+        clearTimeout(timer);
+        console.warn('[Studia.auth]', e && e.message);
+        auth._clearStoredSession();
+        setUser(null);
+        return false;
+      });
+    },
+
+    /* Borra la sesión guardada en localStorage (posible JSON corrupto) sin
+       depender de que el SDK responda. Solo toca las claves de este proyecto. */
+    _clearStoredSession: function () {
+      try {
+        var ref = SUPABASE_URL.replace(/^https?:\/\//, '').split('.')[0];
+        var prefix = 'sb-' + ref;
+        Object.keys(global.localStorage).forEach(function (k) {
+          if (k.indexOf(prefix) === 0) global.localStorage.removeItem(k);
         });
+      } catch (e) { /* sin storage */ }
     },
 
     user: function () { return current; },
