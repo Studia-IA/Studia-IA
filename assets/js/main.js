@@ -833,11 +833,7 @@
     }
 
     var sdkReady = Studia.auth.init().then(function () { return true; }, function () { return false; });
-    Promise.all([sdkReady, Studia.auth.checkLuna()]).then(function (rs) {
-      var ok = rs[0]; var lunaOk = rs[1];
-      if (ok && !lunaOk) {
-        ui.toast('Luna real no está desplegada (luna-chat 404): responde en modo sin conexión.', 'warn', 8000);
-      }
+    sdkReady.then(function (ok) {
       if (!ok) {
         clearTimeout(t);
         hideBoot();

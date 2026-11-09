@@ -113,26 +113,6 @@
     /** El cliente Supabase (null hasta init()). */
     client: function () { return client; },
 
-    /* Diagnóstico del despliegue: la Edge Function debe responder algo
-       (aunque sea 400/401) a un POST vacío. Un 404 significa que aún no
-       está desplegada (supabase functions deploy luna-chat). */
-    lunaDeployed: null,
-    checkLuna: function () {
-      if (auth.lunaDeployed !== null) return Promise.resolve(auth.lunaDeployed);
-      return fetch(LUNA_FUNCTION, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}'
-      }).then(function (res) {
-        auth.lunaDeployed = res.status !== 404;
-        if (!auth.lunaDeployed) console.warn('[Studia.auth] luna-chat no está desplegada (404).');
-        return auth.lunaDeployed;
-      }).catch(function () {
-        auth.lunaDeployed = false;
-        return false;
-      });
-    },
-
     /** JWT actual (para la Edge Function y peticiones con RLS). */
     token: function () {
       if (!client) return Promise.resolve('');

@@ -261,7 +261,9 @@
         openTasks: ctx.openTasks,
         nextExam: ctx.nextExam,
         minutesToday: ctx.minutesToday
-      }, opts);
+      }, opts).then(function (t) {
+        return { text: t };   // mismo contrato que el motor local: { text }
+      });
     }
   };
 

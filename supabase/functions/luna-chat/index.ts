@@ -6,11 +6,13 @@
 // llamada a Groq con GROQ_API_KEY (secreto del proyecto).
 //
 // Despliegue (con la CLI de Supabase, desde la carpeta del repo):
-//   supabase functions deploy luna-chat --no-verify-jwt
+//   supabase functions deploy luna-chat
 //
-// (--no-verify-jwt porque el JWT se valida a mano con el anon
-//  key para poder devolver errores 401 en el formato que usa
-//  el frontend; la verificación no se salta: se hace aquí.)
+// La función se despliega con verify_jwt ACTIVADO (el valor por
+// defecto): el gateway de Supabase valida el JWT antes de que corra
+// este código y devuelve 401 si falta o no es válido. Por eso el
+// `auth.getUser()` de más abajo es una doble comprobación (defensa
+// en profundidad), no la única barrera.
 //
 // Secrets del proyecto (Dashboard → Edge Functions → Secrets):
 //   GROQ_API_KEY     → la clave del proyecto Studia-IA
@@ -183,7 +185,10 @@ Deno.serve(async (req) => {
 
   if (req.method === "OPTIONS") {
     if (origin && !originAllowed(origin)) return json(403, { error: "origen_no_permitido" }, origin);
-    return new Response("ok", { status: 204, headers: corsHeaders(origin) });
+    // 200 (no 204) para evitar el "null body status": una respuesta 204
+    // no admite cuerpo y Deno lanza si se pasa uno. Sin cuerpo + 200 es
+    // lo más seguro para el preflight CORS.
+    return new Response(null, { status: 200, headers: corsHeaders(origin) });
   }
   if (req.method !== "POST") {
     return json(405, { error: "metodo_no_permitido" }, origin);
