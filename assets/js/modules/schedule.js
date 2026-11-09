@@ -17,6 +17,11 @@
 
   var view = { showWeekend: false, selectedDay: null, hiddenSubjects: {} };
 
+  var dragClass = null;
+  var dragCol = null;
+  var dragMoved = false;
+  var suppressClick = false;
+
   function visibleClasses() {
     return store.get().timetable.filter(function (c) { return !view.hiddenSubjects[c.subjectId]; });
   }
@@ -114,6 +119,10 @@
 
   /* ---------------- Render ---------------- */
   function render(root) {
+    suppressClick = false;
+    dragClass = null;
+    dragCol = null;
+    dragMoved = false;
     U.clear(root);
     root.appendChild(U.h('div.grid.grid--split', { style: { '--split': '320px' } }, [
       scheduleCard(),
@@ -166,11 +175,43 @@
           }));
         }
         col.addEventListener('click', function (ev) {
+          if (suppressClick) { suppressClick = false; return; }
           if (ev.target !== col) return;
           var rect = col.getBoundingClientRect();
           var minutes = startMin + Math.round((ev.clientY - rect.top) / HOUR_H * 60 / 15) * 15;
           minutes = U.clamp(minutes, startMin, endMin - 60);
           openForm(null, { day: day, start: U.minutesToTime(minutes), end: U.minutesToTime(Math.min(minutes + 90, endMin)) });
+        });
+        col.addEventListener('dragover', function (ev) {
+          if (!dragClass) return;
+          ev.preventDefault();
+          ev.dataTransfer.dropEffect = 'move';
+          if (dragCol !== col) {
+            if (dragCol) dragCol.classList.remove('tt__col--droptarget');
+            dragCol = col;
+            col.classList.add('tt__col--droptarget');
+          }
+        });
+        col.addEventListener('dragleave', function () { col.classList.remove('tt__col--droptarget'); });
+        col.addEventListener('drop', function (ev) {
+          ev.preventDefault();
+          col.classList.remove('tt__col--droptarget');
+          if (!dragClass) return;
+          var moved = dragClass;
+          var rect = col.getBoundingClientRect();
+          var dur = U.timeToMinutes(moved.end) - U.timeToMinutes(moved.start);
+          var minutes = U.clamp(
+            startMin + Math.round((ev.clientY - rect.top) / HOUR_H * 60 / 15) * 15,
+            startMin, Math.max(startMin, endMin - dur)
+          );
+          dragClass = null; dragCol = null; dragMoved = true; suppressClick = true;
+          store.updateRow('timetable', moved.id, {
+            day: day,
+            start: U.minutesToTime(minutes),
+            end: U.minutesToTime(Math.min(minutes + dur, 1440))
+          });
+          ui.toast(store.subjectName(moved.subjectId) + ' movida al ' + U.DIAS[day] + ' a las ' + U.minutesToTime(minutes), 'success');
+          refresh();
         });
 
         visibleClasses().filter(function (c) { return c.day === day; }).forEach(function (c) {
@@ -180,7 +221,18 @@
           var color = store.subjectColor(c.subjectId);
           col.appendChild(U.h('button.tt__class' + (isConflicting(c.id) ? '.tt__class--conflict' : ''), {
             style: { top: top + 'px', height: height + 'px', borderLeftColor: color, background: 'color-mix(in srgb, ' + color + ' 12%, var(--surface))' },
-            onclick: function (ev) { ev.stopPropagation(); openForm(c); },
+            draggable: 'true',
+            onclick: function (ev) {
+              ev.stopPropagation();
+              if (suppressClick) { suppressClick = false; return; }
+              openForm(c);
+            },
+            ondragstart: function (ev) { dragClass = c; ev.dataTransfer.effectAllowed = 'move'; },
+            ondragend: function () {
+              if (dragCol) dragCol.classList.remove('tt__col--droptarget');
+              if (dragMoved) { suppressClick = true; dragMoved = false; }
+              dragClass = null; dragCol = null;
+            },
             title: c.start + '–' + c.end + ' · ' + store.subjectName(c.subjectId)
           }, [
             U.h('strong', store.subjectName(c.subjectId)),
@@ -204,7 +256,7 @@
       U.h('div.row.row--between.row--wrap.gap-2', { style: { padding: '16px 18px' } }, [
         U.h('div', [
           U.h('h3', 'Horario semanal'),
-          U.h('p.tiny.soft', 'Haz clic en una franja para crear una clase · clic en una clase para editarla')
+          U.h('p.tiny.soft', 'Haz clic en una franja para crear una clase · arrastra una clase para moverla')
         ]),
         U.h('div.row.gap-1', [
           U.h('div.segmented', [
