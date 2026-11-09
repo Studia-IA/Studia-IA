@@ -453,3 +453,26 @@
   font-size: .8rem; line-height: 1;
 }
 .badge__x:hover { background: rgba(255, 255, 255, .45); }
+
+/* Botón con aspecto de enlace (recuperar contraseña, etc.) */
+.btn--link {
+  background: none; border: 0; box-shadow: none;
+  color: var(--brand-600); padding: 6px 4px;
+  font: inherit; font-size: .82rem; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.btn--link:hover { color: var(--brand-700); }
+
+/* ---------- Secciones de Ajustes ---------- */
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.settings-section + .settings-section { margin-top: 2px; }
+.settings-section__title {
+  font-size: .82rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .03em;
+  color: var(--text-soft);
+  margin-bottom: 10px;
+}

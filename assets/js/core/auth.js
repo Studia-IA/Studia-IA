@@ -215,6 +215,21 @@
       return client.auth.signOut().then(function () { setUser(null); });
     },
 
+    /** Envía el email de reseteo de contraseña. Si no se pasa `email`, usa el
+        de la sesión actual (botón de Ajustes); si se pasa, sirve para el
+        "he olvidado mi contraseña" del login (sin sesión). */
+    resetPassword: function (email) {
+      if (!client) return Promise.reject(new Error('Supabase no está listo.'));
+      var target = String(email || '').trim() || ((current && current.email) || '');
+      if (!target) return Promise.reject(new Error('Escribe tu correo.'));
+      return client.auth.resetPasswordForEmail(target, {
+        redirectTo: (global.location ? global.location.origin : '') + '/'
+      }).then(function (r) {
+        if (r.error) throw r.error;
+        return true;
+      });
+    },
+
     onChange: function (fn) {
       listeners.push(fn);
       return function () { listeners = listeners.filter(function (f) { return f !== fn; }); };
