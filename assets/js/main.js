@@ -396,6 +396,14 @@
           }))
         ]),
         U.h('div.field', [
+          U.h('label.field__label', 'Formulario de bienvenida'),
+          U.h('p.tiny.soft.mb-1', 'Vuelve a responder las preguntas iniciales (nombre, curso, asignaturas, objetivo diario y festivos).'),
+          U.h('button.btn.btn--ghost.btn--sm', {
+            type: 'button',
+            onclick: function () { if (modalApi) modalApi.close(); showOnboarding(); }
+          }, [U.icon('edit'), 'Repetir el formulario'])
+        ]),
+        U.h('div.field', [
           U.h('label.field__label', 'Copia de seguridad'),
           U.h('p.tiny.soft.mb-1', 'Descarga una copia de tus datos por si quieres guardarlos aparte o cambiar de equipo.'),
           U.h('div.row.row--wrap.gap-2', [
@@ -580,7 +588,7 @@
   /* ---------------- Diagnóstico ----------------
      Cualquier error no controlado se guarda aquí para poder copiarlo y
      reportarlo. Es la forma más rápida de saber qué falla en otro equipo. */
-  var APP_VERSION = '0.5.1';
+  var APP_VERSION = '0.5.2';
   var recentErrors = [];
 
   function captureError(kind, message, detail) {
@@ -867,13 +875,15 @@
     root.hidden = false;
 
     var p = store.get().profile;
+    var existingRegions = store.get().settings.holidayRegions || [];
+    var customRegion = existingRegions.filter(function (r) { return r !== 'espanya'; })[0];
     var data = {
       name: Studia.auth.name() || (p.name && p.name !== 'Estudiante' ? p.name : ''),
       course: (p.course && p.course !== '1º curso') ? p.course : '',
-      subjects: [],
+      subjects: store.get().subjects.map(function (s) { return s.name; }),
       hours: Math.max(1, Math.min(8, Math.round((store.get().settings.dailyGoal || 120) / 60))),
       municipio: p.municipio || '',
-      region: 'espanya'
+      region: customRegion || 'espanya'
     };
 
     var step = 0;
@@ -913,7 +923,7 @@
     var regionSelect = U.h('select.select', {}, Object.keys(Studia.holidays.REGIONS).map(function (k) {
       return U.h('option', { value: k }, Studia.holidays.REGIONS[k].label);
     }));
-    regionSelect.value = 'espanya';
+    regionSelect.value = data.region;
 
     var stepTitle = U.h('h2.onboarding__step-title');
     var stepBody = U.h('div.onboarding__body');
@@ -942,6 +952,7 @@
           ]),
           subjList
         ]));
+        paintSubjects();
       } else if (step === 2) {
         stepTitle.textContent = 'Objetivo diario';
         stepBody.appendChild(U.h('div.col.gap-2', [
@@ -981,8 +992,11 @@
         st.settings.dailyGoal = hours * 60;
         st.settings.holidayRegions = regions;
       });
+      var existing = store.get().subjects.map(function (s) { return s.name.toLowerCase(); });
       data.subjects.forEach(function (n, i) {
-        store.add('subjects', { name: n, color: ONBOARD_COLORS[i % ONBOARD_COLORS.length] });
+        if (existing.indexOf(n.toLowerCase()) === -1) {
+          store.add('subjects', { name: n, color: ONBOARD_COLORS[i % ONBOARD_COLORS.length] });
+        }
       });
       updateChrome();
       hideOnboarding();

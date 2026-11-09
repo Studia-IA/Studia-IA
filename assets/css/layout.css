@@ -259,6 +259,9 @@
   max-height: 70vh; overflow-y: auto;
 }
 
+/* El "Mi perfil" de la barra lateral abre un flyout hacia la derecha. */
+.sidebar__foot .popover { right: auto; left: 0; width: 300px; }
+
 /* ---------- Main ---------- */
 .app__main {
   padding: var(--gutter);

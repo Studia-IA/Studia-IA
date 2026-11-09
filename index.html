@@ -4,17 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#6d28d9" />
-  <meta name="app-version" content="0.5.1" />
+  <meta name="app-version" content="0.5.2" />
   <meta name="mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
   <title>Studia-IA · Tu espacio de estudio</title>
   <meta name="description" content="Studia-IA: organiza tus asignaturas, planifica tu estudio y mantén la racha." />
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/css/base.css?v=0.5.1" />
-  <link rel="stylesheet" href="assets/css/layout.css?v=0.5.1" />
-  <link rel="stylesheet" href="assets/css/components.css?v=0.5.1" />
-  <link rel="stylesheet" href="assets/css/views.css?v=0.5.1" />
+  <link rel="stylesheet" href="assets/css/base.css?v=0.5.2" />
+  <link rel="stylesheet" href="assets/css/layout.css?v=0.5.2" />
+  <link rel="stylesheet" href="assets/css/components.css?v=0.5.2" />
+  <link rel="stylesheet" href="assets/css/views.css?v=0.5.2" />
 </head>
 <body>
   <button class="skip-link" type="button" id="skipToMain">Saltar al contenido</button>
@@ -146,9 +146,12 @@
       </div>
 
       <div class="sidebar__foot">
-        <button class="nav__item nav__item--btn" id="btnSidebarProfile">
-          <svg class="icon"><use href="#i-users"></use></svg><span>Mi perfil</span>
-        </button>
+        <div class="popover-wrap">
+          <button class="nav__item nav__item--btn" id="btnSidebarProfile">
+            <svg class="icon"><use href="#i-users"></use></svg><span>Mi perfil</span>
+          </button>
+          <div class="popover" hidden></div>
+        </div>
         <button class="nav__item nav__item--btn" id="btnSettings">
           <svg class="icon"><use href="#i-settings"></use></svg><span>Ajustes</span>
         </button>
@@ -190,9 +193,12 @@
             </button>
             <div class="popover" id="bellPopover" hidden></div>
           </div>
-          <button class="avatar" id="btnProfile" title="Tu perfil">
-            <span id="avatarInitials">ES</span>
-          </button>
+          <div class="popover-wrap">
+            <button class="avatar" id="btnProfile" title="Tu perfil">
+              <span id="avatarInitials">ES</span>
+            </button>
+            <div class="popover" hidden></div>
+          </div>
         </div>
       </header>
 
@@ -217,28 +223,28 @@
     window.dispatchEvent(new Event('studia:supabase'));
   </script>
 
-  <script src="assets/js/core/utils.js?v=0.5.1"></script>
-  <script src="assets/js/core/ui.js?v=0.5.1"></script>
-  <script src="assets/js/core/auth.js?v=0.5.1"></script>
-  <script src="assets/js/core/db.js?v=0.5.1"></script>
-  <script src="assets/js/core/store.js?v=0.5.1"></script>
-  <script src="assets/js/core/router.js?v=0.5.1"></script>
+  <script src="assets/js/core/utils.js?v=0.5.2"></script>
+  <script src="assets/js/core/ui.js?v=0.5.2"></script>
+  <script src="assets/js/core/auth.js?v=0.5.2"></script>
+  <script src="assets/js/core/db.js?v=0.5.2"></script>
+  <script src="assets/js/core/store.js?v=0.5.2"></script>
+  <script src="assets/js/core/router.js?v=0.5.2"></script>
   <!-- ===== Datos ===== -->
-  <script src="assets/js/data/holidays.js?v=0.5.1"></script>
-  <script src="assets/js/data/rewards.js?v=0.5.1"></script>
-  <script src="assets/js/data/seed.js?v=0.5.1"></script>
+  <script src="assets/js/data/holidays.js?v=0.5.2"></script>
+  <script src="assets/js/data/rewards.js?v=0.5.2"></script>
+  <script src="assets/js/data/seed.js?v=0.5.2"></script>
   <!-- ===== Módulos ===== -->
-  <script src="assets/js/modules/dashboard.js?v=0.5.1"></script>
-  <script src="assets/js/modules/calendar.js?v=0.5.1"></script>
-  <script src="assets/js/modules/schedule.js?v=0.5.1"></script>
-  <script src="assets/js/modules/study.js?v=0.5.1"></script>
-  <script src="assets/js/modules/progress.js?v=0.5.1"></script>
-  <script src="assets/js/modules/subjects.js?v=0.5.1"></script>
-  <script src="assets/js/modules/tasks.js?v=0.5.1"></script>
-  <script src="assets/js/modules/ai.js?v=0.5.1"></script>
-  <script src="assets/js/modules/social.js?v=0.5.1"></script>
-  <script src="assets/js/modules/premium.js?v=0.5.1"></script>
+  <script src="assets/js/modules/dashboard.js?v=0.5.2"></script>
+  <script src="assets/js/modules/calendar.js?v=0.5.2"></script>
+  <script src="assets/js/modules/schedule.js?v=0.5.2"></script>
+  <script src="assets/js/modules/study.js?v=0.5.2"></script>
+  <script src="assets/js/modules/progress.js?v=0.5.2"></script>
+  <script src="assets/js/modules/subjects.js?v=0.5.2"></script>
+  <script src="assets/js/modules/tasks.js?v=0.5.2"></script>
+  <script src="assets/js/modules/ai.js?v=0.5.2"></script>
+  <script src="assets/js/modules/social.js?v=0.5.2"></script>
+  <script src="assets/js/modules/premium.js?v=0.5.2"></script>
   <!-- ===== Arranque ===== -->
-  <script src="assets/js/main.js?v=0.5.1"></script>
+  <script src="assets/js/main.js?v=0.5.2"></script>
 </body>
 </html>
