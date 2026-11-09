@@ -53,7 +53,7 @@
 .brand__text strong { font-size: 1.02rem; letter-spacing: -.02em; color: var(--side-text-strong); }
 .brand__text strong span { color: #c4b5fd; }
 .brand__text small { color: rgba(221, 214, 254, .75); font-size: .74rem; }
-.sidebar__close { display: none; margin-left: auto; color: var(--side-text); }
+.sidebar .sidebar__close { display: grid; margin-left: auto; color: var(--side-text); }
 .sidebar__close:hover { background: rgba(255, 255, 255, .12); color: #fff; }
 
 .nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; flex: 1 1 auto; margin: 0 -4px; padding: 0 4px; }
@@ -143,9 +143,13 @@
   flex: 1 1 auto;
   min-width: 0;
   margin-left: var(--sidebar-w);
+  transition: margin-left .25s ease;
   display: flex;
   flex-direction: column;
 }
+.app.sidebar--collapsed .sidebar { transform: translateX(-100%); }
+.app.sidebar--collapsed .app__body { margin-left: 0; }
+.app.sidebar--collapsed .topbar .topbar__menu { display: grid; }
 
 .topbar {
   position: sticky; top: 0; z-index: 40;
@@ -156,7 +160,7 @@
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
-.topbar__menu { display: none; }
+.topbar .topbar__menu { display: none; }
 .topbar__title { min-width: 0; }
 .topbar__title h1 { font-size: 1.16rem; }
 .topbar__title p { font-size: .78rem; color: var(--text-soft); }
@@ -272,12 +276,11 @@
 .section-head p { font-size: .8rem; color: var(--text-muted); }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
   .sidebar { transform: translateX(-100%); box-shadow: var(--shadow-lg); }
   .sidebar.is-open { transform: none; }
-  .sidebar__close { display: grid; }
   .app__body { margin-left: 0; }
-  .topbar__menu { display: grid; }
+  .topbar .topbar__menu { display: grid; }
   .topbar__search { width: auto; flex: 1 1 auto; max-width: 320px; }
   /* Zona táctil mínima de 44px en el menú lateral */
   .nav__item { min-height: 44px; padding: 10px 12px; }
@@ -296,7 +299,7 @@
     column-gap: 10px;
     align-items: center;
   }
-  .topbar__menu { grid-area: menu; }
+  .topbar .topbar__menu { grid-area: menu; }
   .topbar__title { grid-area: title; }
   .topbar__actions { grid-area: actions; gap: 4px; }
   .topbar__search {

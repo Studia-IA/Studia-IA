@@ -29,12 +29,11 @@
     'Subida de vídeos y apuntes sin límite de tamaño',
     'Sin anuncios',
     'Creación de documentos completos',
-    'Simulador de exámenes avanzado con correção',
+    'Simulador de exámenes avanzado con corrección',
     'Banco de exámenes anteriores por asignatura',
     'Personalización total de tu robot de IA',
     'Planes de verano, vacaciones e idiomas',
     'Test inicial de conocimientos detallado',
-    'Cancelar la suscripción cuando quieras',
     'Recomendaciones personalizadas a futuro'
   ];
 
@@ -72,7 +71,7 @@
       ]),
       U.h('div.card', [
         U.h('div.card__head', [
-          U.h('div', [U.h('h3', 'Comparativa completa'), U.h('p', 'Qué incluye cada plan')]),
+          U.h('div', [U.h('h3', 'Comparativa del modelo freemium'), U.h('p', 'Propuesta de planes; no hay pagos ni suscripciones activos.')]),
           U.h('span.badge' + (premium ? '.badge--amber' : ''), premium ? 'Estás en Premium' : 'Estás en Gratis')
         ]),
         U.h('div', { style: { overflowX: 'auto' } }, [
@@ -113,7 +112,7 @@
       premium ? U.h('span.plan__tag', 'Recomendado') : null,
       U.h('div', [
         U.h('h3', name),
-        U.h('div.plan__price', premium ? [U.h('span', '3,99 €'), U.h('small', ' / mes')] : [U.h('span', '0 €'), U.h('small', ' para siempre')])
+        U.h('div.plan__price', premium ? [U.h('span', '4,99 €'), U.h('small', ' / mes · propuesta')] : [U.h('span', '0 €'), U.h('small', ' para siempre')])
       ]),
       U.h('p.small', premium ? 'Desbloquea la parte social, la IA completa y todos los extras.' : 'Todo lo esencial para organizarte y estudiar.'),
       U.h('div.plan__features', features.map(function (f) {

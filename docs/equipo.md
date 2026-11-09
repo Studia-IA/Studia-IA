@@ -1,6 +1,6 @@
 # Equipo · Studia-IA
 
-**Repositorio:** <https://github.com/AlexB886/Studia-AI>
+**Repositorio:** <https://github.com/Studia-IA/Studia-IA>
 
 ## Roles
 
@@ -32,3 +32,4 @@ en `main`.
 
 El detalle completo del reparto está en [`roles-y-tareas.md`](roles-y-tareas.md)
 y las normas técnicas en [`../AGENTS.md`](../AGENTS.md).
+

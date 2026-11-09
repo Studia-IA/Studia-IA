@@ -115,7 +115,7 @@ Cuando un miembro del grupo entre en el repo con su agente de IA y busque
 
 ## 5) Publicación actual
 
-- **Repositorio:** `https://github.com/AlexB886/Studia-AI`
+- **Repositorio:** `https://github.com/Studia-IA/Studia-IA`
 - **Ramas:** `main` (estable) + `hector`, `carles`, `joan`, `alex` (una por persona)
 - **Base local:** XAMPP → `http://localhost/htdocs_hecpiqbel/proyecto_grupo_prog/`
 - **Zip listo para publicar:** `/home/hecpiqbel/studia-ia-web.zip` (solo web, sin docs ni tests)

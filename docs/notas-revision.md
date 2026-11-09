@@ -38,6 +38,14 @@ no tienes nada pendiente.
 
 ---
 
+> **Nota de Héctor (IA real Groq, 0.4.x):** he fusionado `main` en mi rama y he
+> probado el merge con tu rama `carles`: **sin conflictos** en git. Como el merge
+> toca ficheros compartidos (`base.css`, `layout.css`, `views.css`, `main.js`,
+> `index.html`, `tests.html`, `package.json`), al abrir tu PR hacia `main` mira
+> que el CI (`tools/check.js`) salga en verde; si algo de mi parte te pisa una
+> norma que tú cambiaste, dímelo y lo hablamos antes de fusionar.
+
+
 ## Alex · Tareas, Asignaturas, Comunidad y Premium
 
 **Verificado y correcto (no rehacer):**

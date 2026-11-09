@@ -58,6 +58,7 @@
               return o;
             })),
             U.h('select.select.select--sm', {
+              'aria-label': 'Filtrar por asignatura',
               onchange: function () { view.subject = this.value; refresh(); },
               style: { width: 'auto' }
             }, [U.h('option', { value: 'all' }, 'Todas las asignaturas')].concat(
@@ -68,7 +69,12 @@
               })
             ))
           ]),
-          U.h('button.btn.btn--primary.btn--sm', { onclick: function () { openForm(null); } }, [U.icon('plus'), 'Nueva tarea'])
+          U.h('div.row.gap-1.row--wrap', [
+            view.filter !== 'open' || view.priority !== 'all' || view.subject !== 'all' ? U.h('button.btn.btn--ghost.btn--sm', {
+              onclick: function () { view.filter = 'open'; view.priority = 'all'; view.subject = 'all'; refresh(); }
+            }, 'Limpiar filtros') : null,
+            U.h('button.btn.btn--primary.btn--sm', { onclick: function () { openForm(null); } }, [U.icon('plus'), 'Nueva tarea'])
+          ])
         ])
       ]),
       overdue ? U.h('div.card', { style: { borderColor: 'rgba(244,63,94,.35)', background: 'rgba(244,63,94,.05)' } }, [
@@ -107,6 +113,7 @@
         U.h('div.task__title', t.title),
         U.h('div.task__meta', [
           U.h('span.tiny', { style: { color: store.subjectColor(t.subjectId), fontWeight: '650' } }, store.subjectName(t.subjectId)),
+          overdue ? U.h('span.badge.badge--rose', 'Vencida') : null,
           t.due ? U.h('span.tiny' + (overdue ? '.due--over' : isToday ? '.due--today' : ''), U.fmtRelative(t.due)) : null,
           U.h('span.prio.prio--' + (t.priority || 'media'), (PRIORITIES[t.priority] || PRIORITIES.media).label),
           t.notes ? U.h('span.tiny.soft.truncate', { style: { maxWidth: '260px' } }, t.notes) : null
