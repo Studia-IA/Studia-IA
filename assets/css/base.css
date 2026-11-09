@@ -229,6 +229,11 @@ img, svg { display: block; max-width: 100%; }
 .nowrap    { white-space: nowrap; }
 .truncate  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hidden    { display: none !important; }
+
+/* El atributo `hidden` debe ganar SIEMPRE, incluso sobre clases que fijan
+   `display` (p. ej. `.btn { display: inline-flex }`); si no, botones con
+   `hidden` siguen visibles. */
+[hidden]   { display: none !important; }
 .mt-0 { margin-top: 0; } .mt-1 { margin-top: 6px; } .mt-2 { margin-top: 12px; } .mt-3 { margin-top: 18px; } .mt-4 { margin-top: 26px; }
 .mb-0 { margin-bottom: 0; } .mb-1 { margin-bottom: 6px; } .mb-2 { margin-bottom: 12px; } .mb-3 { margin-bottom: 18px; }
 .gap-1 { gap: 6px; } .gap-2 { gap: 12px; } .gap-3 { gap: 18px; }
