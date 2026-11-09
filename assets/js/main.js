@@ -346,7 +346,7 @@
 
     var existingRegions = s.holidayRegions || [];
     var customRegion = existingRegions.filter(function (r) { return r !== 'espanya'; })[0] || 'espanya';
-    var regionSelect = U.h('select.select', {}, Object.keys(Studia.holidays.REGIONS).map(function (k) {
+    var regionSelect = U.h('select.select', {}, holidayRegionKeys().map(function (k) {
       return U.h('option', { value: k }, Studia.holidays.REGIONS[k].label);
     }));
     regionSelect.value = customRegion;
@@ -359,6 +359,10 @@
     }
 
     var planLine = U.h('p.small', 'Plan actual: …');
+    var upgradeBtn = U.h('button.btn.btn--soft.btn--sm', {
+      type: 'button',
+      onclick: function () { ui.toast('El plan Premium llegará pronto. ¡Gracias por tu interés!', 'info'); }
+    }, [U.icon('crown'), 'Mejorar a Premium']);
 
     var modalApi = ui.modal({
       title: 'Ajustes',
@@ -383,10 +387,7 @@
         ]),
         section('Plan', [
           planLine,
-          U.h('button.btn.btn--soft.btn--sm', {
-            type: 'button',
-            onclick: function () { ui.toast('El plan Premium llegará pronto. ¡Gracias por tu interés!', 'info'); }
-          }, [U.icon('crown'), 'Mejorar a Premium'])
+          upgradeBtn
         ]),
         section('Información', [
           U.h('p.tiny.soft', 'Versión ' + APP_VERSION),
@@ -454,7 +455,9 @@
     if (Studia.auth && Studia.auth.profile) {
       Studia.auth.profile().then(function (pr) {
         if (!planLine.isConnected) return;
-        planLine.textContent = 'Plan actual: ' + ((pr && pr.plan === 'premium') ? 'Premium' : 'Free');
+        var premium = !!(pr && pr.plan === 'premium');
+        planLine.textContent = 'Plan actual: ' + (premium ? 'Premium' : 'Free');
+        upgradeBtn.hidden = premium;
       });
     }
   }
@@ -592,7 +595,7 @@
   /* ---------------- Diagnóstico ----------------
      Cualquier error no controlado se guarda aquí para poder copiarlo y
      reportarlo. Es la forma más rápida de saber qué falla en otro equipo. */
-  var APP_VERSION = '0.5.3';
+  var APP_VERSION = '0.5.4';
   var recentErrors = [];
 
   function captureError(kind, message, detail) {
@@ -900,6 +903,16 @@
   /* ---------------- Asistente de bienvenida (onboarding) ---------------- */
   var ONBOARD_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#f43f5e', '#8b5cf6'];
 
+  /* Claves de regiones ordenadas: "España" primero, luego las comunidades
+     por orden alfabético (con acentos correctos). */
+  function holidayRegionKeys() {
+    var keys = Object.keys(Studia.holidays.REGIONS).filter(function (k) { return k !== 'espanya'; });
+    keys.sort(function (a, b) {
+      return Studia.holidays.REGIONS[a].label.localeCompare(Studia.holidays.REGIONS[b].label, 'es');
+    });
+    return ['espanya'].concat(keys);
+  }
+
   function showOnboarding() {
     var root = document.getElementById('onboardingScreen');
     if (!root) return;
@@ -952,7 +965,7 @@
     hoursSelect.value = String(data.hours);
 
     var centerInput = U.h('input.input', { value: data.center, placeholder: 'Ej. UAB - Escuela de Ingeniería' });
-    var regionSelect = U.h('select.select', {}, Object.keys(Studia.holidays.REGIONS).map(function (k) {
+    var regionSelect = U.h('select.select', {}, holidayRegionKeys().map(function (k) {
       return U.h('option', { value: k }, Studia.holidays.REGIONS[k].label);
     }));
     regionSelect.value = data.region;
