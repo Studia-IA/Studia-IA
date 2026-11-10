@@ -155,7 +155,7 @@
     return U.h('div.card', { style: { borderTop: '3px solid var(--brand-500)' } }, [
       U.h('div.row.gap-2.mb-2', [
         U.h('div.post__avatar', { style: { background: colorOf(profile.name), width: '38px', height: '38px' } }, profile.initials || initialsOf(profile.name)),
-        U.h('div.grow', [U.h('strong.small', '¿Qué quieres compartir?'), U.h('p.tiny.soft', 'Publica para tu comunidad de estudio')])
+        U.h('div.grow', [U.h('strong.small', '¿Qué quieres compartir?'), U.h('p.tiny.soft', 'Comparte una duda, un recurso o un avance en tu espacio de estudio.')])
       ]),
       text,
       U.h('div.col.gap-1', { style: { marginTop: '10px' } }, [
@@ -164,7 +164,7 @@
         notePicker
       ]),
       U.h('div.row.row--between.row--wrap.gap-2', { style: { marginTop: '12px' } }, [
-        U.h('span.tiny.soft', 'Los archivos no se suben: puedes adjuntar un apunte guardado o un enlace.'),
+        U.h('span.tiny.soft', 'Feed personal de esta cuenta: no hay interacciones multiusuario. Los archivos no se suben; puedes adjuntar un apunte o enlace.'),
         U.h('button.btn.btn--primary.btn--sm', {
           onclick: function () {
             var content = text.value.trim();
@@ -379,7 +379,7 @@
     });
     var latest = store.find('forum', postId);
     if (latest) store.updateRow('forum', postId, { shares: (Number(latest.shares) || 0) + 1 });
-    ui.toast('Publicación compartida en el feed', 'success');
+    ui.toast('Copia añadida a tu feed personal', 'success');
   }
 
   function refresh() {
