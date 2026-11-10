@@ -595,7 +595,7 @@
   /* ---------------- Diagnóstico ----------------
      Cualquier error no controlado se guarda aquí para poder copiarlo y
      reportarlo. Es la forma más rápida de saber qué falla en otro equipo. */
-  var APP_VERSION = '0.5.5';
+  var APP_VERSION = '0.5.7';
   var recentErrors = [];
 
   function captureError(kind, message, detail) {

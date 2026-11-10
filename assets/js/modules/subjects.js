@@ -78,6 +78,7 @@
     var notes = notesOf(s.id);
     var exam = nextExamOf(s.id);
     var open = store.openTasks().filter(function (t) { return t.subjectId === s.id; });
+    var exams = store.get().events.filter(function (e) { return e.subjectId === s.id && e.type === 'exam'; }).length;
 
     var color = safeColor(s.color);
     return U.h('div.subject-card', { style: {
@@ -99,7 +100,8 @@
       U.h('div.row.gap-2.row--wrap', [
         U.h('span.badge', U.fmtMinutes(mins) + ' en 30 días'),
         U.h('span.badge', notes.length + ' apuntes'),
-        open.length ? U.h('span.badge.badge--brand', open.length + ' tareas') : null
+        U.h('span.badge.badge--brand', open.length + ' tareas pendientes'),
+        U.h('span.badge', exams + (exams === 1 ? ' examen' : ' exámenes'))
       ]),
       exam ? U.h('div.row.gap-2.small', [
         U.h('span.badge.badge--rose', 'Examen ' + U.fmtRelative(exam.date))
