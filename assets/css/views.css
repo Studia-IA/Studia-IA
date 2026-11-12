@@ -35,6 +35,7 @@
   position: relative;
 }
 .cal__cell:hover { background: var(--surface-2); }
+.cal__cell--droptarget { outline: 2px dashed var(--brand-500); outline-offset: -2px; background: var(--brand-50); }
 .cal__cell--out { background: var(--bg); }
 .cal__cell--out .cal__num { color: var(--text-soft); opacity: .55; }
 .cal__cell--weekend:not(.cal__cell--out) { background: color-mix(in srgb, var(--rose-500) 3%, var(--surface)); }
@@ -52,14 +53,17 @@
 .cal__events { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; overflow: hidden; overflow: clip; }
 .cal__event {
   display: flex; align-items: center; gap: 5px;
-  font-size: .7rem; font-weight: 600;
+  font: inherit; font-size: .7rem; font-weight: 600;
+  width: 100%; min-width: 0; text-align: left;
   padding: 2px 6px;
+  border: 0; border-left: 2px solid var(--brand-500);
   border-radius: 6px;
   background: var(--brand-50);
   color: var(--brand-700);
-  border-left: 2px solid var(--brand-500);
+  cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.cal__event[draggable]:active { cursor: grabbing; position: relative; z-index: 5; }
 .cal__event--exam    { background: rgba(244,63,94,.12);  color: var(--rose-600);  border-left-color: var(--rose-500); }
 .cal__event--class   { background: rgba(14,165,233,.12); color: var(--sky-600);   border-left-color: var(--sky-500); }
 .cal__event--deadline{ background: rgba(245,158,11,.14); color: var(--amber-600);border-left-color: var(--amber-500); }
@@ -106,7 +110,7 @@
     margin-top: 1px; width: 100%;
   }
   .cal__event {
-    width: 6px; height: 6px; min-height: 0;
+    width: 6px; height: 6px; min-width: 0; min-height: 0;
     padding: 0; border: 0; border-radius: 50%;
     background: currentColor;
     font-size: 0; line-height: 0; overflow: hidden;
@@ -135,6 +139,7 @@
 }
 .tt__col { position: relative; border-left: 1px solid var(--border); min-height: 100%; }
 .tt__col--today { background: color-mix(in srgb, var(--brand-500) 2.5%, transparent); }
+.tt__col--droptarget { background: var(--brand-50); box-shadow: inset 0 0 0 2px var(--brand-500); }
 .tt__grid-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border); }
 .tt__grid-line--half { border-top-style: dotted; opacity: .55; }
 .tt__now { position: absolute; left: 0; right: 0; height: 2px; background: var(--rose-500); z-index: 3; pointer-events: none; }
