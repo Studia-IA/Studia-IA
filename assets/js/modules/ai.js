@@ -239,119 +239,49 @@
     }
   };
 
-  /* ---------------- Motor Groq (IA real) ----------------
-     La clave se guarda SOLO en localStorage (clave `studia.groq.key`),
-     nunca en el repositorio ni en la base de datos. Sin clave, o si la
-     API falla, Luna usa el motor local: el chat nunca se queda vacío.
-
-       Studia.ai.groq.setKey('gsk_...')   // activa el motor Groq
-       Studia.ai.groq.setKey(null)        // vuelve al motor local     */
-  var GROQ_KEY_LS = 'studia.groq.key';
-  var GROQ_MODELS = ['openai/gpt-oss-20b'];
-
-  function groqKey() {
-    try { return global.localStorage.getItem(GROQ_KEY_LS) || ''; } catch (e) { return ''; }
-  }
-
-  function groqSystem(ctx) {
-    var lines = [
-      'Eres Luna, la asistente de estudio de la app Studia-IA.',
-      'Idioma: español, en todo momento y sin excepciones. Tutea al estudiante.',
-      'Responde SIEMPRE de forma directa, como si hablaras con un compañero. 2-4 frases o una lista de 3-5 puntos.',
-      'PROHIBIDO escribir tu razonamiento, tus notas internas o comentarios sobre cómo vas a responder. Solo la respuesta final.',
-      'Usas SOLO los datos del contexto; no inventes tareas, fechas ni asignaturas.',
-      'Perfil: ' + (ctx.profile.name || 'estudiante') + ', curso ' + (ctx.profile.course || '-') + '.',
-      'Minutos de estudio de hoy: ' + ctx.minutesToday + '.',
-      'Asignaturas: ' + (ctx.subjects.map(function (x) { return x.name; }).join(', ') || 'ninguna') + '.',
-      ctx.nextExam ? 'Próximo examen: ' + ctx.nextExam.title + ' el ' + ctx.nextExam.date + '.' : 'No hay exámenes próximos.',
-      ctx.openTasks.length ? 'Tareas abiertas: ' + ctx.openTasks.map(function (t) { return t.title + ' (vence ' + t.due + ')'; }).join('; ') + '.' : 'No hay tareas abiertas.',
-      'Si piden un plan, da pasos realizables con pomodoros de 25 minutos.'
-    ];
-    return lines.join('\n');
-  }
-
-  var groqEngine = {
-    name: 'groq',
+  /* ---------------- Motor Luna real (Edge Function) ----------------
+     La clave de Groq vive SOLO en los Secrets de Supabase: el navegador
+     llama a la Edge Function luna-chat con el JWT del usuario (Studia.auth).
+     Sin sesión o si la función falla, Luna usa el motor local y el chat
+     nunca se queda vacío. */
+  var edgeEngine = {
+    name: 'luna-edge',
     ask: function (text, ctx, opts) {
-      var key = groqKey();
-      if (!key) return Promise.reject(new Error('Sin clave de Groq'));
-      var msgs = [{ role: 'system', content: groqSystem(ctx) }];
-      (ctx.history || []).forEach(function (m) {
-        msgs.push({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text });
+      var auth = Studia.auth;
+      if (!auth || typeof auth.askLuna !== 'function') {
+        return Promise.reject(new Error('Sin sesión con Supabase.'));
+      }
+      var history = (ctx.history || []).slice(-7).map(function (m) {
+        return { role: m.role, text: m.text };
       });
-      msgs.push({ role: 'user', content: text });
-
-      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      var timeout = setTimeout(function () { if (ctrl) ctrl.abort(); }, 25000);
-      var onAbort = function () { if (ctrl) ctrl.abort(); };
-      if (opts && opts.signal) {
-        if (opts.signal.aborted) { clearTimeout(timeout); return Promise.reject(new DOMException('Cancelado', 'AbortError')); }
-        opts.signal.addEventListener('abort', onAbort);
-      }
-
-      function attempt(i) {
-        var model = GROQ_MODELS[Math.min(i, GROQ_MODELS.length - 1)];
-        return fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({ model: model, messages: msgs, temperature: 0.6, max_tokens: 400 }),
-          signal: ctrl ? ctrl.signal : undefined
-        }).then(function (res) {
-          if (res.status === 404 || res.status === 429 || res.status >= 500) {
-            // modelo no disponible, saturado o caído: probamos el siguiente
-            if (i + 1 < GROQ_MODELS.length) return attempt(i + 1);
-            if (res.status === 429) { var e = new Error('Luna está saturada; espera unos segundos'); e.groq = 'rate'; throw e; }
-            throw new Error(res.status === 404 ? 'Ningún modelo de Groq está disponible ahora' : 'Groq ' + res.status);
-          }
-          if (!res.ok) {
-            return res.json().catch(function () { return {}; }).then(function (b) {
-              var msg = (b.error && b.error.message) || ('Groq ' + res.status);
-              var e = new Error(/key|api/i.test(msg) && res.status === 401 ? 'La clave de Groq no es válida' : msg);
-              throw e;
-            });
-          }
-          return res.json();
-        });
-      }
-
-      return attempt(0).then(function (data) {
-        clearTimeout(timeout);
-        if (opts && opts.signal) opts.signal.removeEventListener('abort', onAbort);
-        var choice = data && data.choices && data.choices[0] && data.choices[0].message;
-        var raw = (choice && (choice.content || choice.reasoning)) || '';
-        var content = String(raw).replace(/<\|[^|>]*\|>/g, '').trim();
-        return { text: content, leaked: !(choice && choice.content) };
-      }).then(function (r) {
-        // gpt-oss a veces devuelve su razonamiento interno: se pide una vez
-        // más, en seco, solo la respuesta final.
-        if (!r.text || !r.leaked) return r.text ? { text: r.text } : { text: 'No he sabido responder. Prueba otra vez.' };
-        var retry = msgs.concat([{ role: 'user', content: 'Responde otra vez, en español y SOLO con la respuesta final. Nada de razonamiento ni notas internas.' }]);
-        return fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({ model: GROQ_MODELS[0], messages: retry, temperature: 0.4, max_tokens: 350 }),
-          signal: ctrl ? ctrl.signal : undefined
-        }).then(function (res) { return res.ok ? res.json() : data; })
-          .catch(function () { return data; })
-          .then(function (data2) {
-            var c2 = data2 && data2.choices && data2.choices[0] && data2.choices[0].message;
-            var t2 = String((c2 && (c2.content || '')) || '').replace(/<\|[^|>]*\|>/g, '').trim();
-            return { text: t2 || 'No he sabido responder. Prueba otra vez.' };
-          });
-      }).catch(function (err) {
-        clearTimeout(timeout);
-        if (opts && opts.signal) opts.signal.removeEventListener('abort', onAbort);
-        throw err;
+      history.push({ role: 'me', text: text });
+      return auth.askLuna(history, {
+        profile: ctx.profile,
+        subjects: ctx.subjects,
+        openTasks: ctx.openTasks,
+        nextExam: ctx.nextExam,
+        minutesToday: ctx.minutesToday
+      }, opts).then(function (t) {
+        return { text: t };   // mismo contrato que el motor local: { text }
       });
     }
   };
 
-  var engine = groqKey() ? groqEngine : localEngine;
-  var pending = null;
-
-  function applyEngineFromKey() {
-    engine = groqKey() ? groqEngine : localEngine;
+  function chooseEngine() {
+    var auth = Studia.auth;
+    if (auth && typeof auth.user === 'function' && auth.user()) {
+      engine = edgeEngine;
+    } else {
+      engine = localEngine;
+    }
+    return engine.name;
   }
+  if (Studia.auth && typeof Studia.auth.onChange === 'function') {
+    Studia.auth.onChange(function () { chooseEngine(); });
+  }
+
+  var engine = localEngine;
+  var pending = null;
 
   function buildContext() {
     var s = store.get();
@@ -683,7 +613,7 @@
           U.h('button.btn.btn--ghost.btn--sm.btn--block.mt-2', { onclick: openSettings }, [U.icon('settings'), 'Configurar'])
         ]),
         U.h('div.card', { style: { background: 'var(--surface-2)' } }, [
-          U.h('p.tiny.soft', 'Luna responde con IA real (Groq) si has puesto tu clave en Ajustes; si no, lo hace en el navegador a partir de tus datos, sin conexión.')
+          U.h('p.tiny.soft', 'Luna usa IA real (a través de tu cuenta de Studia-IA) cuando hay conexión; si falla, responde en el navegador a partir de tus datos.')
         ])
       ])
     ]));
@@ -716,19 +646,6 @@
     setEngine: function (next) { engine = next || localEngine; return engine; },
     ask: function (text, opts) { return engine.ask(text, buildContext(), opts); },
     localEngine: localEngine,
-    groq: {
-      hasKey: function () { return !!groqKey(); },
-      models: GROQ_MODELS,
-      setKey: function (k) {
-        try {
-          if (k) global.localStorage.setItem(GROQ_KEY_LS, k.trim());
-          else global.localStorage.removeItem(GROQ_KEY_LS);
-        } catch (e) { /* sin storage */ }
-        applyEngineFromKey();
-        return engine.name;
-      },
-      engine: groqEngine
-    }
   };
 
   Studia.modules = Studia.modules || {};

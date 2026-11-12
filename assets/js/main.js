@@ -9,6 +9,11 @@
   var Studia = global.Studia;
   var U = Studia.utils, store = Studia.store, ui = Studia.ui;
 
+  /* Limpiezas de los listeners montados por startApp(). En el arranque
+     se registran y se liberan al cambiar de usuario sin recargar. */
+  var wireOnce = {};
+  var lastMountedUser = null;
+
   /* Expuesto para que otros módulos (router) puedan reportar fallos. */
   Studia.captureError = function (kind, message, detail) { captureError(kind, message, detail); };
   Studia.diagnostics = function () { return diagnosticsText(); };
@@ -256,10 +261,16 @@
   function wireProfile() {
     function showProfile(anchor) {
       var p = store.get().profile;
-      ui.popover(anchor, U.h('div.col.gap-2', { style: { padding: '6px' } }, [
-        U.h('div', [U.h('strong.small', p.name), U.h('p.tiny.soft', p.university || '')]),
-        U.h('button.btn.btn--ghost.btn--sm.btn--block', { onclick: function () { openSettings(); } }, [U.icon('settings'), 'Ajustes']),
-        U.h('button.btn.btn--ghost.btn--sm.btn--block', {
+      var cloud = !!(Studia.auth && Studia.auth.user && Studia.auth.user());
+      var displayName = (p.name && p.name !== 'Estudiante') ? p.name : (Studia.auth.name() || p.name);
+      var planLine = U.h('p.tiny.soft', { 'data-plan-line': '1' }, 'Plan: …');
+
+      var items = [
+        U.h('div', [U.h('strong.small', displayName), U.h('p.tiny.soft', (cloud ? Studia.auth.email() : p.university) || ''), planLine]),
+        U.h('button.btn.btn--ghost.btn--sm.btn--block', { onclick: function () { openSettings(); } }, [U.icon('settings'), 'Ajustes'])
+      ];
+      if (!cloud) {
+        items.push(U.h('button.btn.btn--ghost.btn--sm.btn--block', {
           onclick: function () {
             ui.confirm({ title: '¿Restablecer los datos de demostración?', message: 'Se borrarán tus tareas, sesiones y ajustes y volverán los datos de ejemplo.', okLabel: 'Restablecer', danger: true })
               .then(function (ok) {
@@ -270,8 +281,25 @@
                 Studia.router.go('dashboard');
               });
           }
-        }, [U.icon('reset'), 'Restablecer demo'])
-      ]));
+        }, [U.icon('reset'), 'Restablecer demo']));
+      } else {
+        items.push(U.h('button.btn.btn--ghost.btn--sm.btn--block', {
+          onclick: function () {
+            ui.confirm({ title: '¿Cerrar sesión?', message: 'Tus datos quedan guardados en tu cuenta de Studia-IA.', okLabel: 'Cerrar sesión', danger: true })
+              .then(function (ok) { if (ok) Studia.auth.signOut(); });
+          }
+        }, [U.icon('exit'), 'Cerrar sesión']));
+      }
+      ui.popover(anchor, U.h('div.col.gap-2', { style: { padding: '6px' } }, items));
+
+      /* El plan llega de la tabla profiles (free/premium), asíncrono. */
+      if (cloud && Studia.auth.profile) {
+        Studia.auth.profile().then(function (pr) {
+          if (!planLine.isConnected) return;
+          var label = (pr && pr.plan === 'premium') ? 'Premium' : 'Free';
+          planLine.textContent = 'Plan: ' + label;
+        });
+      }
     }
     ['btnProfile', 'btnSidebarProfile'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -303,115 +331,135 @@
 
   function openSettings() {
     var s = store.get().settings;
-    var p = store.get().profile;
-    var nameInput = U.h('input.input', { value: p.name });
-    var uniInput = U.h('input.input', { value: p.university || '' });
-    var goalInput = U.h('input.input.input--sm', { type: 'number', min: 15, step: 15, value: s.dailyGoal || 120 });
-    var firstDaySelect = U.h('select.select.select--sm', {}, [
+    var goalHours = Math.max(1, Math.min(8, Math.round((s.dailyGoal || 120) / 60)));
+
+    var goalSelect = U.h('select.select', {}, [1, 2, 3, 4, 5, 6, 8].map(function (h) {
+      return U.h('option', { value: h }, h + (h === 1 ? ' hora' : ' horas') + ' al día');
+    }));
+    goalSelect.value = String(goalHours);
+
+    var firstDaySelect = U.h('select.select', {}, [
       U.h('option', { value: '1' }, 'Lunes'),
       U.h('option', { value: '0' }, 'Domingo')
     ]);
     firstDaySelect.value = String(s.firstDay === undefined ? 1 : s.firstDay);
 
-    var regions = (s.holidayRegions || []).slice();
-    var fileInput = U.h('input', { type: 'file', accept: '.json,application/json', hidden: true });
-    var aiKeyInput = U.h('input', { type: 'password', placeholder: 'gsk_…', autocomplete: 'off', style: { flex: '1', minWidth: '0' } });
-    try { aiKeyInput.value = global.localStorage.getItem('studia.groq.key') || ''; } catch (e) { /* sin storage */ }
-    fileInput.addEventListener('change', function () {
-      var file = fileInput.files && fileInput.files[0];
-      fileInput.value = '';
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        var payload;
-        try { payload = JSON.parse(String(reader.result)); }
-        catch (err) { ui.toast('El archivo no es un JSON válido', 'error'); return; }
-        ui.confirm({
-          title: 'Restaurar copia de seguridad',
-          message: 'Se reemplazarán TODOS los datos actuales (tareas, sesiones, ajustes…) por los de la copia. Esta acción no se puede deshacer.',
-          okLabel: 'Restaurar', danger: true
-        }).then(function (ok) {
-          if (!ok) return;
-          try {
-            store.importData(payload);
-            applyTheme(store.get().settings.theme);
-            updateChrome();
-            if (modalApi) modalApi.close();
-            ui.toast('Copia restaurada correctamente', 'success');
-            Studia.router.go('dashboard');
-          } catch (err) {
-            ui.toast(err.message || 'No se pudo restaurar la copia', 'error');
-          }
-        });
-      };
-      reader.onerror = function () { ui.toast('No se pudo leer el archivo', 'error'); };
-      reader.readAsText(file);
-    });
+    var existingRegions = s.holidayRegions || [];
+    var customRegion = existingRegions.filter(function (r) { return r !== 'espanya'; })[0] || 'espanya';
+    var regionSelect = U.h('select.select', {}, holidayRegionKeys().map(function (k) {
+      return U.h('option', { value: k }, Studia.holidays.REGIONS[k].label);
+    }));
+    regionSelect.value = customRegion;
+
+    function section(title, children) {
+      return U.h('div.settings-section', [
+        U.h('h3.settings-section__title', title),
+        U.h('div.col.gap-2', children)
+      ]);
+    }
+
+    var planLine = U.h('p.small', 'Plan actual: …');
+    var upgradeBtn = U.h('button.btn.btn--soft.btn--sm', {
+      type: 'button',
+      onclick: function () { ui.toast('El plan Premium llegará pronto. ¡Gracias por tu interés!', 'info'); }
+    }, [U.icon('crown'), 'Mejorar a Premium']);
 
     var modalApi = ui.modal({
       title: 'Ajustes',
-      subtitle: 'Preferencias de tu cuenta',
+      subtitle: 'Cuenta y preferencias',
       body: U.h('div.col.gap-3', [
-        U.h('div.field', [U.h('label.field__label', 'Nombre'), nameInput]),
-        U.h('div.field', [U.h('label.field__label', 'Universidad'), uniInput]),
-        U.h('div.field', [U.h('label.field__label', 'Objetivo de estudio diario (min)'), goalInput]),
-        U.h('div.field', [U.h('label.field__label', 'Primer día de la semana'), firstDaySelect]),
-        U.h('div.field', [
-          U.h('label.field__label', 'Festivos visibles'),
-          U.h('div.col.gap-1', Object.keys(Studia.holidays.REGIONS).map(function (key) {
-            var input = U.h('input', { type: 'checkbox' });
-            input.checked = regions.indexOf(key) !== -1;
-            input.addEventListener('change', function () {
-              var i = regions.indexOf(key);
-              if (input.checked && i === -1) regions.push(key);
-              if (!input.checked && i !== -1) regions.splice(i, 1);
-            });
-            return U.h('label.switch', [input, U.h('span.switch__track'), U.h('span.small', Studia.holidays.REGIONS[key].label)]);
-          }))
+        section('Mi cuenta', [
+          U.h('button.btn.btn--ghost.btn--sm.btn--block', {
+            type: 'button',
+            onclick: function () { if (modalApi) modalApi.close(); showOnboarding(); }
+          }, [U.icon('edit'), 'Repetir el formulario de bienvenida']),
+          U.h('button.btn.btn--ghost.btn--sm.btn--block', {
+            type: 'button', onclick: changePassword
+          }, [U.icon('reset'), 'Cambiar contraseña']),
+          U.h('button.btn.btn--ghost.btn--sm.btn--block', {
+            type: 'button', onclick: startOver
+          }, [U.icon('trash'), 'Empezar de cero'])
         ]),
-        U.h('div.field', [
-          U.h('label.field__label', 'Luna con IA real (Groq)'),
-          U.h('p.tiny.soft.mb-1', 'Pega tu clave gratuita de console.groq.com. Se guarda solo en este navegador; nunca se sube al repositorio. Sin clave, Luna responde en modo sin conexión.'),
-          U.h('div.row.gap-2', [
-            aiKeyInput,
-            U.h('button.btn.btn--ghost.btn--sm', {
-              type: 'button',
-              onclick: function () {
-                var k = aiKeyInput.value.trim();
-                Studia.ai.groq.setKey(k || null);
-                ui.toast(k ? 'Luna con IA real activada' : 'Luna vuelve al modo sin conexión', 'success');
-              }
-            }, 'Guardar clave')
-          ])
+        section('Preferencias de estudio', [
+          U.h('div.field', [U.h('label.field__label', 'Objetivo diario'), goalSelect]),
+          U.h('div.field', [U.h('label.field__label', 'Primer día de la semana'), firstDaySelect]),
+          U.h('div.field', [U.h('label.field__label', 'Comunidad autónoma (festivos)'), regionSelect])
         ]),
-        U.h('div.field', [
-          U.h('label.field__label', 'Copia de seguridad'),
-          U.h('p.tiny.soft.mb-1', 'Tus datos viven solo en este navegador. Descarga una copia si vas a cambiar de equipo o borrar datos.'),
-          U.h('div.row.row--wrap.gap-2', [
-            U.h('button.btn.btn--ghost.btn--sm', { type: 'button', onclick: downloadBackup }, [U.icon('file'), 'Descargar copia']),
-            U.h('button.btn.btn--ghost.btn--sm', { type: 'button', onclick: function () { fileInput.click(); } }, [U.icon('upload'), 'Restaurar copia'])
-          ]),
-          fileInput
+        section('Plan', [
+          planLine,
+          upgradeBtn
+        ]),
+        section('Información', [
+          U.h('p.tiny.soft', 'Versión ' + APP_VERSION),
+          U.h('button.btn.btn--ghost.btn--sm.btn--block', { type: 'button', onclick: privacy }, [U.icon('file'), 'Política de privacidad']),
+          U.h('button.btn.btn--ghost.btn--sm.btn--block', { type: 'button', onclick: openDiagnostics }, [U.icon('alert'), 'Diagnóstico'])
         ])
       ]),
       actions: [
-        { label: 'Diagnóstico', align: 'left', variant: 'ghost', onClick: function () { openDiagnostics(); return false; } },
         { label: 'Cancelar', variant: 'ghost' },
         {
           label: 'Guardar', variant: 'primary', onClick: function () {
+            var r = regionSelect.value || 'espanya';
             store.update(function (st) {
-              st.profile.name = nameInput.value.trim() || 'Estudiante';
-              st.profile.initials = st.profile.name.split(/\s+/).map(function (x) { return x[0]; }).join('').slice(0, 2).toUpperCase();
-              st.profile.university = uniInput.value;
-              st.settings.dailyGoal = U.clamp(+goalInput.value || 120, 15, 600);
+              st.settings.dailyGoal = (+goalSelect.value || 2) * 60;
               st.settings.firstDay = +firstDaySelect.value;
-              st.settings.holidayRegions = regions;
+              st.settings.holidayRegions = [r, 'espanya'].filter(function (x, i, a) { return a.indexOf(x) === i; });
             });
+            updateChrome();
             ui.toast('Ajustes guardados', 'success');
           }
         }
       ]
     });
+
+    function changePassword() {
+      if (!Studia.auth || !Studia.auth.resetPassword) return;
+      Studia.auth.resetPassword().then(function () {
+        ui.toast('Te hemos enviado un email para cambiar la contraseña.', 'success');
+      }).catch(function (e) {
+        ui.toast((e && e.message) || 'No se pudo enviar el email.', 'error');
+      });
+    }
+
+    function startOver() {
+      ui.confirm({
+        title: '¿Empezar de cero?',
+        message: 'Se borrarán TODOS los datos de tu cuenta y empezarás con la app vacía. Esta acción no se puede deshacer.',
+        okLabel: 'Borrar todo', danger: true
+      }).then(function (ok) {
+        if (!ok) return;
+        store.startFresh();
+        applyTheme(store.get().settings.theme);
+        updateChrome();
+        if (modalApi) modalApi.close();
+        ui.toast('Cuenta vacía. ¡A empezar!', 'success');
+        Studia.router.go('dashboard');
+      });
+    }
+
+    function privacy() {
+      if (modalApi) modalApi.close();
+      ui.modal({
+        title: 'Política de privacidad',
+        subtitle: 'Studia-IA',
+        body: U.h('div.col.gap-2', [
+          U.h('p.small', 'Tus datos (tareas, horario, sesiones y ajustes) se guardan de forma segura en tu cuenta de Supabase y solo tú puedes verlos.'),
+          U.h('p.small', 'La asistente Luna usa únicamente tu propio contexto (asignaturas, tareas, exámenes y minutos de estudio) para responderte; no comparte información con otros usuarios.'),
+          U.h('p.small', 'No vendemos ni compartimos tus datos con terceros. Puedes borrar todos tus datos en cualquier momento desde Ajustes → Empezar de cero.')
+        ]),
+        actions: [{ label: 'Cerrar', variant: 'primary' }]
+      });
+    }
+
+    /* El plan llega de la tabla profiles (free/premium), asíncrono. */
+    if (Studia.auth && Studia.auth.profile) {
+      Studia.auth.profile().then(function (pr) {
+        if (!planLine.isConnected) return;
+        var premium = !!(pr && pr.plan === 'premium');
+        planLine.textContent = 'Plan actual: ' + (premium ? 'Premium' : 'Free');
+        upgradeBtn.hidden = premium;
+      });
+    }
   }
 
   /* ---------------- Elementos de la interfaz ---------------- */
@@ -474,14 +522,16 @@
   }
 
   /* ---------------- Atajos de teclado ---------------- */
+  function onGlobalKey(e) {
+    if (e.target.matches('input, textarea, select')) return;
+    if (e.key === '/') { e.preventDefault(); var gs = document.getElementById('globalSearch'); if (gs) gs.focus(); }
+    if (e.key === 't') Studia.router.go('study');
+    if (e.key === 'c') Studia.router.go('calendar');
+    if (e.key === 'h') Studia.router.go('schedule');
+  }
+
   function wireShortcuts() {
-    document.addEventListener('keydown', function (e) {
-      if (e.target.matches('input, textarea, select')) return;
-      if (e.key === '/') { e.preventDefault(); document.getElementById('globalSearch').focus(); }
-      if (e.key === 't') Studia.router.go('study');
-      if (e.key === 'c') Studia.router.go('calendar');
-      if (e.key === 'h') Studia.router.go('schedule');
-    });
+    document.addEventListener('keydown', onGlobalKey);
   }
 
   /* ---------------- Scroll ----------------
@@ -545,7 +595,7 @@
   /* ---------------- Diagnóstico ----------------
      Cualquier error no controlado se guarda aquí para poder copiarlo y
      reportarlo. Es la forma más rápida de saber qué falla en otro equipo. */
-  var APP_VERSION = '0.4.2';
+  var APP_VERSION = '0.5.5';
   var recentErrors = [];
 
   function captureError(kind, message, detail) {
@@ -660,6 +710,20 @@
   }
 
   function startApp() {
+    /* Re-entradas (cambio de sesión sin recargar): se quitan los
+       listeners del arranque anterior para no duplicarlos. */
+    var uid = (Studia.auth.user() && Studia.auth.user().id) || 'anon';
+    if (lastMountedUser && lastMountedUser !== uid) {
+      Object.keys(wireOnce).forEach(function (k) {
+        try { wireOnce[k](); } catch (e) { /* ya liberado */ }
+      });
+      wireOnce = {};
+      document.removeEventListener('keydown', onGlobalKey);
+      var chip = document.getElementById('timerChip');
+      if (chip) chip.remove();
+    }
+    lastMountedUser = uid;
+
     applyTheme(store.get().settings.theme);
     wireLifecycle();
 
@@ -678,26 +742,377 @@
     document.getElementById('btnTheme').addEventListener('click', toggleTheme);
     document.getElementById('btnSettings').addEventListener('click', openSettings);
 
-    store.subscribe(updateChrome);
+    var unsub = store.subscribe(updateChrome);
+    wireOnce.chrome = unsub;
+    /* Cambio de usuario: la recarga la atiende el listener global del boot. */
     updateChrome();
 
     Studia.router.start();
     document.body.classList.add('is-ready');
+
+    /* Con la app ya montada: si había datos del prototipo en este
+       navegador, se suben a la cuenta la primera vez. */
+    if (Studia.db.migrateLegacy) {
+      Studia.db.migrateLegacy().then(function (res) {
+        if (res === 'migrated') {
+          /* Se recarga para pintar el estado real de la cuenta (ya
+             sincronizado con la nube) tras el volcado. */
+          store.load().then(function () { Studia.router.render(); });
+          ui.toast('Tus datos de prueba se han subido a tu cuenta', 'success');
+        }
+      });
+    }
+
+    /* Asistente de bienvenida: se muestra una vez (si no se ha completado). */
+    if (!store.get().profile.onboarded) showOnboarding();
+  }
+
+  /* ---------------- Pantalla de acceso (obligatorio) ---------------- */
+  function showError(box, message) {
+    var err = box.querySelector('.login-screen__error');
+    if (!err) {
+      err = U.h('p.login-screen__error', { role: 'alert' });
+      box.insertBefore(err, box.querySelector('.login-screen__actions'));
+    }
+    U.clear(err);
+    err.appendChild(document.createTextNode(message));
+  }
+
+  function drawLogin() {
+    var root = document.getElementById('loginScreen');
+    if (!root) return;
+    document.body.classList.remove('is-ready');   // oculta la app hasta entrar
+    U.clear(root);
+    root.hidden = false;
+
+    var email = U.h('input', { type: 'email', required: true, autocomplete: 'email', placeholder: 'tu@correo.edu', class: 'field__input' });
+    var pass = U.h('input', { type: 'password', required: true, minlength: '6', autocomplete: 'current-password', placeholder: '••••••••', class: 'field__input' });
+    var nameInput = U.h('input', { type: 'text', required: true, autocomplete: 'name', placeholder: 'Tu nombre', class: 'field__input' });
+    var nameField = U.h('div.field', [U.h('label.field__label', { for: 'loginName' }, 'Nombre'), nameInput]);
+    nameInput.id = 'loginName';
+    var mode = 'in';
+    var tabIn = U.h('button.btn.btn--soft.btn--sm', { type: 'button' }, 'Entrar');
+    var tabUp = U.h('button.btn.btn--ghost.btn--sm', { type: 'button' }, 'Crear cuenta');
+
+    function setMode(next) {
+      mode = next;
+      tabIn.className = 'btn btn--sm ' + (mode === 'in' ? 'btn--soft' : 'btn--ghost');
+      tabUp.className = 'btn btn--sm ' + (mode === 'up' ? 'btn--soft' : 'btn--ghost');
+      pass.setAttribute('autocomplete', mode === 'in' ? 'current-password' : 'new-password');
+      nameField.hidden = mode !== 'up';
+      nameInput.required = mode === 'up';
+      submitBtn.textContent = mode === 'in' ? 'Entrar' : 'Crear cuenta';
+      help.textContent = mode === 'in'
+        ? 'Estudia mejor con tus tareas, tu horario y Luna.'
+        : 'Se crea gratis y empieza con una cuenta vacía: la app se adapta a ti.';
+    }
+
+    var help = U.h('p.tiny.soft', 'Estudia mejor con tus tareas, tu horario y Luna.');
+    var submitBtn = U.h('button.btn.btn--primary.btn--block', { type: 'submit' }, 'Entrar');
+    tabIn.addEventListener('click', function () { setMode('in'); });
+    tabUp.addEventListener('click', function () { setMode('up'); });
+
+    var form = U.h('form.login-screen__form', { novalidate: false }, [
+      U.h('div.row.gap-1.login-screen__tabs', [tabIn, tabUp]),
+      nameField,
+      U.h('div.field', [U.h('label.field__label', { for: 'loginEmail' }, 'Email'), email]),
+      U.h('div.field', [U.h('label.field__label', { for: 'loginPass' }, 'Contraseña (mínimo 6 caracteres)'), pass]),
+      U.h('div.login-screen__actions', [submitBtn]),
+      help
+    ]);
+    email.id = 'loginEmail';
+    pass.id = 'loginPass';
+
+    function submit(e) {
+      e.preventDefault();
+      var em = email.value.trim();
+      var pw = pass.value;
+      var name = nameInput.value.trim();
+      if (!em || !pw) { showError(form, 'Escribe email y contraseña.'); return; }
+      if (mode === 'up' && !name) { showError(form, 'Escribe tu nombre.'); return; }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Espera…';
+      var op = mode === 'in'
+        ? Studia.auth.signIn(em, pw)
+        : Studia.auth.signUp(em, pw, name);
+      op.then(function (res) {
+        if (mode === 'up') {
+          var needsConfirm = res && res.data && res.data.session == null;
+          if (needsConfirm) {
+            showError(form, 'Cuenta creada. Confirma el email (en cuanto lo activemos) y entra.');
+            return;
+          }
+        }
+        /* onAuthStateChange mostrará la app al haber sesión */
+      }).catch(function (err) {
+        var msg = (err && err.message) || 'No se ha podido continuar.';
+        if (/invalid login/i.test(msg)) msg = 'Email o contraseña incorrectos.';
+        if (/already registered|already exists/i.test(msg)) msg = 'Ese email ya tiene cuenta. Prueba a entrar.';
+        showError(form, msg);
+      }).then(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = mode === 'in' ? 'Entrar' : 'Crear cuenta';
+      });
+    }
+    form.addEventListener('submit', submit);
+
+    setMode('in');
+
+    root.appendChild(U.h('div.login-screen__box', [
+      U.h('img', { src: 'assets/img/favicon.svg', alt: '', width: '52', height: '52' }),
+      U.h('h1.login-screen__title', 'Studia-IA'),
+      U.h('p.login-screen__sub', 'Organiza tu curso: tareas, horario, pomodoro y Luna.'),
+      form,
+      U.h('button.btn.btn--link', { type: 'button', onclick: showForgotPassword }, '¿Has olvidado tu contraseña?')
+    ]));
+    setTimeout(function () { email.focus(); }, 60);
+  }
+
+  function hideLogin() {
+    var root = document.getElementById('loginScreen');
+    if (root) { root.hidden = true; U.clear(root); }
+  }
+
+  /* ---------------- Recuperar contraseña (login) ---------------- */
+  function showForgotPassword() {
+    var emailInput = U.h('input.input', { type: 'email', placeholder: 'tu@correo.edu' });
+    var api;
+    api = ui.modal({
+      title: 'Recuperar contraseña',
+      subtitle: 'Te enviaremos un enlace para cambiarla.',
+      body: U.h('div.field', [U.h('label.field__label', 'Tu email'), emailInput]),
+      actions: [
+        { label: 'Cancelar', variant: 'ghost' },
+        {
+          label: 'Enviar enlace', variant: 'primary', onClick: function () {
+            var em = emailInput.value.trim();
+            if (!em) { ui.toast('Escribe tu email.', 'warn'); return false; }
+            Studia.auth.resetPassword(em).then(function () {
+              api.close();
+              ui.toast('Revisa tu email para restablecer la contraseña.', 'success');
+            }).catch(function (e) {
+              ui.toast((e && e.message) || 'No se pudo enviar el email.', 'error');
+            });
+            return false;   // no cerrar hasta que resuelva
+          }
+        }
+      ]
+    });
+  }
+
+  /* ---------------- Asistente de bienvenida (onboarding) ---------------- */
+  var ONBOARD_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#f43f5e', '#8b5cf6'];
+
+  /* Claves de regiones ordenadas: "España" primero, luego las comunidades
+     por orden alfabético (con acentos correctos). */
+  function holidayRegionKeys() {
+    var keys = Object.keys(Studia.holidays.REGIONS).filter(function (k) { return k !== 'espanya'; });
+    keys.sort(function (a, b) {
+      return Studia.holidays.REGIONS[a].label.localeCompare(Studia.holidays.REGIONS[b].label, 'es');
+    });
+    return ['espanya'].concat(keys);
+  }
+
+  function showOnboarding() {
+    var root = document.getElementById('onboardingScreen');
+    if (!root) return;
+    U.clear(root);
+    root.hidden = false;
+
+    var p = store.get().profile;
+    var existingRegions = store.get().settings.holidayRegions || [];
+    var customRegion = existingRegions.filter(function (r) { return r !== 'espanya'; })[0];
+    var data = {
+      name: Studia.auth.name() || (p.name && p.name !== 'Estudiante' ? p.name : ''),
+      course: (p.course && p.course !== '1º curso') ? p.course : '',
+      subjects: store.get().subjects.map(function (s) { return s.name; }),
+      hours: Math.max(1, Math.min(8, Math.round((store.get().settings.dailyGoal || 120) / 60))),
+      center: (p.university && p.university !== 'Mi universidad') ? p.university : '',
+      region: customRegion || 'espanya'
+    };
+
+    var step = 0;
+    var total = 4;
+
+    var nameInput = U.h('input.input', { value: data.name, placeholder: 'Tu nombre' });
+    var courseInput = U.h('input.input', { value: data.course, placeholder: 'Ej. 1º de Ingeniería Informática' });
+
+    var subjInput = U.h('input.input', { placeholder: 'Ej. Programación I' });
+    var subjList = U.h('div.row.row--wrap.gap-1', { 'data-subj-list': '' });
+    function addSubject() {
+      var n = subjInput.value.trim();
+      if (!n) return;
+      data.subjects.push(n);
+      subjInput.value = '';
+      paintSubjects();
+    }
+    function paintSubjects() {
+      U.clear(subjList);
+      data.subjects.forEach(function (name, i) {
+        subjList.appendChild(U.h('span.badge.badge--violet', [
+          U.h('span', name),
+          U.h('button.badge__x', { type: 'button', 'aria-label': 'Quitar ' + name, onclick: function () { data.subjects.splice(i, 1); paintSubjects(); } }, '×')
+        ]));
+      });
+    }
+    subjInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addSubject(); }
+    });
+
+    var hoursSelect = U.h('select.select', {}, [1, 2, 3, 4, 5, 6, 8].map(function (h) {
+      return U.h('option', { value: h }, h + (h === 1 ? ' hora' : ' horas') + ' al día');
+    }));
+    hoursSelect.value = String(data.hours);
+
+    var centerInput = U.h('input.input', { value: data.center, placeholder: 'Ej. UAB - Escuela de Ingeniería' });
+    var regionSelect = U.h('select.select', {}, holidayRegionKeys().map(function (k) {
+      return U.h('option', { value: k }, Studia.holidays.REGIONS[k].label);
+    }));
+    regionSelect.value = data.region;
+
+    var stepTitle = U.h('h2.onboarding__step-title');
+    var stepBody = U.h('div.onboarding__body');
+    var backBtn = U.h('button.btn.btn--ghost.btn--sm', { type: 'button' }, 'Atrás');
+    var nextBtn = U.h('button.btn.btn--primary.btn--sm', { type: 'button' }, 'Siguiente');
+    var skipBtn = U.h('button.btn.btn--ghost.btn--sm', { type: 'button' }, 'Omitir');
+
+    function renderStep() {
+      U.clear(stepBody);
+      backBtn.hidden = step === 0;
+      nextBtn.textContent = step === total - 1 ? 'Empezar' : 'Siguiente';
+      if (step === 0) {
+        stepTitle.textContent = '¿Cómo te llamamos?';
+        stepBody.appendChild(U.h('div.col.gap-2', [
+          U.h('div.field', [U.h('label.field__label', 'Nombre'), nameInput]),
+          U.h('div.field', [U.h('label.field__label', 'Curso / estudios'), courseInput]),
+          U.h('p.tiny.soft', 'Con esto adaptamos Luna y tus objetivos.')
+        ]));
+      } else if (step === 1) {
+        stepTitle.textContent = 'Tus asignaturas';
+        stepBody.appendChild(U.h('div.col.gap-2', [
+          U.h('p.tiny.soft', 'Añade las que estés cursando (puedes poner varias).'),
+          U.h('div.row.gap-2', [
+            subjInput,
+            U.h('button.btn.btn--soft.btn--sm', { type: 'button', onclick: addSubject }, [U.icon('plus'), 'Añadir'])
+          ]),
+          subjList
+        ]));
+        paintSubjects();
+      } else if (step === 2) {
+        stepTitle.textContent = 'Objetivo diario';
+        stepBody.appendChild(U.h('div.col.gap-2', [
+          U.h('p.tiny.soft', '¿Cuánto quieres estudiar al día?'),
+          hoursSelect
+        ]));
+      } else {
+        stepTitle.textContent = 'Tu centro y festivos';
+        stepBody.appendChild(U.h('div.col.gap-2', [
+          U.h('p.tiny.soft', 'Tu centro de estudios y tu comunidad para los festivos.'),
+          U.h('div.field', [U.h('label.field__label', 'Centro de estudios'), centerInput]),
+          U.h('div.field', [U.h('label.field__label', 'Comunidad autónoma'), regionSelect])
+        ]));
+      }
+    }
+
+    function hideOnboarding() {
+      root.hidden = true;
+      U.clear(root);
+    }
+
+    function finish() {
+      var name = nameInput.value.trim();
+      var course = courseInput.value.trim();
+      var hours = Math.max(1, Math.min(8, +hoursSelect.value || 2));
+      var region = regionSelect.value || 'espanya';
+      var regions = [region, 'espanya'].filter(function (r, i, a) { return a.indexOf(r) === i; });
+
+      store.update(function (st) {
+        if (name) {
+          st.profile.name = name;
+          st.profile.initials = name.split(/\s+/).map(function (x) { return x[0]; }).join('').slice(0, 2).toUpperCase();
+        }
+        if (course) st.profile.course = course;
+        st.profile.university = centerInput.value.trim();
+        st.profile.onboarded = true;
+        st.settings.dailyGoal = hours * 60;
+        st.settings.holidayRegions = regions;
+      });
+      var existing = store.get().subjects.map(function (s) { return s.name.toLowerCase(); });
+      data.subjects.forEach(function (n, i) {
+        if (existing.indexOf(n.toLowerCase()) === -1) {
+          store.add('subjects', { name: n, color: ONBOARD_COLORS[i % ONBOARD_COLORS.length] });
+        }
+      });
+      updateChrome();
+      hideOnboarding();
+      if (data.subjects.length) ui.toast('¡Listo! Bienvenido a Studia-IA.', 'success');
+    }
+
+    function skip() {
+      store.update(function (st) { st.profile.onboarded = true; });
+      hideOnboarding();
+    }
+
+    backBtn.addEventListener('click', function () { if (step > 0) { step--; renderStep(); } });
+    nextBtn.addEventListener('click', function () {
+      if (step < total - 1) { step++; renderStep(); }
+      else finish();
+    });
+    skipBtn.addEventListener('click', skip);
+
+    root.appendChild(U.h('div.onboarding__box', [
+      U.h('img', { src: 'assets/img/favicon.svg', alt: '', width: '44', height: '44' }),
+      U.h('p.onboarding__eyebrow', 'Bienvenido a Studia-IA'),
+      stepTitle,
+      stepBody,
+      U.h('div.onboarding__actions', [skipBtn, U.h('div', { style: { flex: '1' } }), backBtn, nextBtn])
+    ]));
+
+    renderStep();
   }
 
   function boot() {
     wireErrors();
     var t = setTimeout(showBoot, 150);   // solo aparece si la carga tarda
-    store.load().then(function () {
+    var appStarted = false;
+
+    function openApp() {
+      store.load().then(function () {
+        clearTimeout(t);
+        hideBoot();
+        hideLogin();
+        startApp();
+      }, function (e) {
+        clearTimeout(t);
+        hideBoot();
+        hideLogin();
+        startApp();
+        captureError('carga', e && e.message, e && e.stack);
+        ui.toast('No se pudieron cargar tus datos guardados: se muestran datos vacíos. Puedes restaurar una copia en Ajustes → Copia de seguridad.', 'warn', 9000);
+      });
+    }
+
+    var sdkReady = Studia.auth.init().then(function () { return true; }, function () { return false; });
+    sdkReady.then(function (ok) {
+      if (!ok) {
+        clearTimeout(t);
+        hideBoot();
+        showBoot();
+        document.querySelector('.boot-screen__card p').textContent =
+          'Sin conexión con Supabase: revisa internet y recarga.';
+        return;
+      }
+      /* Cambio de sesión: con usuario se abre la app; sin él, pantalla de acceso.
+         Tras arrancar ya, la recarga la hace store.watchAuth (estado); aquí solo
+         montar la app si aún no estaba montada. */
+      Studia.auth.onChange(function (user) {
+        if (user) { if (!appStarted) openApp(); }
+        else { appStarted = false; drawLogin(); }
+      });
       clearTimeout(t);
-      hideBoot();
-      startApp();
-    }, function (e) {
-      clearTimeout(t);
-      hideBoot();
-      startApp();
-      captureError('carga', e && e.message, e && e.stack);
-      ui.toast('No se pudieron cargar tus datos guardados: se muestran datos de ejemplo. Puedes restaurar una copia en Ajustes → Copia de seguridad.', 'warn', 9000);
+      hideBoot();                       // sin usuario → no quedarse "Cargando…"
+      if (Studia.auth.user()) openApp();
+      else drawLogin();
     });
   }
 

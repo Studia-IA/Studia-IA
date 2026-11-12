@@ -382,3 +382,97 @@
   .toast { max-width: none; }
   .to-top { right: 14px; bottom: 14px; width: 38px; height: 38px; }
 }
+
+/* ---------- Pantalla de acceso (obligatorio con Supabase) ---------- */
+.login-screen {
+  position: fixed; inset: 0; z-index: 480;
+  display: grid; place-items: center;
+  padding: 20px;
+  background:
+    radial-gradient(60% 50% at 20% 0%, var(--brand-100, rgba(99, 102, 241, .18)), transparent 70%),
+    var(--bg);
+  overflow: auto;
+}
+.login-screen[hidden] { display: none; }
+.login-screen__box {
+  width: min(380px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 26px 22px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  text-align: center;
+  animation: fadeIn .2s ease;
+}
+.login-screen__title { font-size: 1.35rem; }
+.login-screen__sub { color: var(--text-soft); font-size: .85rem; margin-bottom: 10px; }
+.login-screen__form { display: flex; flex-direction: column; gap: 12px; width: 100%; text-align: left; }
+.login-screen__tabs { justify-content: center; }
+.login-screen__error {
+  margin: 0; padding: 9px 12px;
+  border-radius: var(--radius);
+  background: rgba(244, 63, 94, .1);
+  border: 1px solid rgba(244, 63, 94, .35);
+  color: var(--rose-600, #be123c);
+  font-size: .8rem;
+}
+.login-screen__actions { display: flex; }
+
+/* ---------- Asistente de bienvenida (onboarding) ---------- */
+.onboarding {
+  position: fixed; inset: 0; z-index: 485;
+  display: grid; place-items: center;
+  padding: 20px;
+  background:
+    radial-gradient(60% 50% at 20% 0%, var(--brand-100, rgba(99, 102, 241, .18)), transparent 70%),
+    var(--bg);
+  overflow: auto;
+}
+.onboarding[hidden] { display: none; }
+.onboarding__box {
+  width: min(440px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 24px 22px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  text-align: center;
+  animation: fadeIn .2s ease;
+}
+.onboarding__eyebrow { color: var(--brand-600); font-size: .78rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
+.onboarding__step-title { font-size: 1.2rem; }
+.onboarding__body { width: 100%; text-align: left; margin: 6px 0 4px; }
+.onboarding__actions { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 10px; }
+.badge__x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-left: 6px; padding: 0;
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, .28); color: inherit;
+  font-size: .8rem; line-height: 1;
+}
+.badge__x:hover { background: rgba(255, 255, 255, .45); }
+
+/* Botón con aspecto de enlace (recuperar contraseña, etc.) */
+.btn--link {
+  background: none; border: 0; box-shadow: none;
+  color: var(--brand-600); padding: 6px 4px;
+  font: inherit; font-size: .82rem; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.btn--link:hover { color: var(--brand-700); }
+
+/* ---------- Secciones de Ajustes ---------- */
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.settings-section + .settings-section { margin-top: 2px; }
+.settings-section__title {
+  font-size: .82rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .03em;
+  color: var(--text-soft);
+  margin-bottom: 10px;
+}

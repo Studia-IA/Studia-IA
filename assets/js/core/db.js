@@ -73,28 +73,101 @@
     }
   };
 
-  /* ---------------- Adaptor Supabase (futuro) ----------------
-     Placeholder: cuando exista el proyecto en Supabase basta con
-     rellenar estas funciones con el cliente oficial.
-     -------------------------------------------------------------- */
+  /* ---------------- Adaptador Supabase (producción) ----------------
+     Todo el estado viaja como un único blob JSON en la tabla `state`
+     (una fila por usuario; RLS: solo el dueño la lee y escribe).
+     El `client` es el de Studia.auth; sin sesión no hay persistencia.
+     El localStorage sigue usándose como caché y para la migración
+     única de la cuenta prototipo (ver migrateLegacy).
+     ------------------------------------------------------------------ */
+  var MIGRATED_FLAG = 'studia.migrated.v1';
+
   var supabaseAdapter = {
     name: 'supabase',
     client: null,
-    _ensure: function () {
-      if (!this.client) {
-        console.warn('[Studia] Supabase no configurado: se usará el almacenamiento local.');
-        return null;
+
+    _client: function () {
+      if (this.client) return this.client;
+      if (Studia.auth && Studia.auth.client) {
+        this.client = Studia.auth.client();
+        if (this.client) return this.client;
       }
-      return this.client;
+      if (global.supabase && global.supabase.createClient) {
+        console.warn('[Studia] Supabase sin sesión: se usará el almacenamiento local.');
+      } else {
+        console.warn('[Studia] El SDK de Supabase no está disponible: se usará el almacenamiento local.');
+      }
+      return null;
     },
-    load: function () { return this._ensure() ? Promise.resolve(null) : localAdapter.load(); },
-    save: function () { return Promise.resolve(false); },
-    clear: function () { return localAdapter.clear(); },
-    select: function () { return localAdapter.select.apply(localAdapter, arguments); },
-    insert: function () { return localAdapter.insert.apply(localAdapter, arguments); },
-    update: function () { return localAdapter.update.apply(localAdapter, arguments); },
-    remove: function () { return localAdapter.remove.apply(localAdapter, arguments); }
+
+    /* El último guardado en vuelo; los nuevos esperan al anterior
+       para no escribir dos blobs a la vez. */
+    _saving: Promise.resolve(),
+
+    /* El blob llega en state.data (columna jsonb). */
+    load: function () {
+      var c = this._client();
+      if (!c) return localAdapter.load();
+      return c.from('state').select('data').maybeSingle().then(function (r) {
+        if (r.error) throw r.error;
+        /* Sin blob en la nube → usuario nuevo: arranca vacío (el seed
+           solo es para el prototipo local). */
+        return (r.data && r.data.data) || null;
+      });
+    },
+
+    save: function (data) {
+      var self = this;
+      /* Caché local siempre: sirve para el modo local, la copia de
+         seguridad y la migración única. */
+      localAdapter.save(data);
+
+      var c = this._client();
+      var p = this._saving.then(function () {
+        if (!c) return true;
+        return c.auth.getSession().then(function (rs) {
+          var uid = rs && rs.data && rs.data.session && rs.data.session.user && rs.data.session.user.id;
+          if (!uid) return true;   // sin sesión: no hay a dónde guardar
+          return c.from('state')
+            .upsert({ user_id: uid, data: data, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+            .then(function (r) { if (r.error) throw r.error; return true; });
+        });
+      });
+      /* Los fallos no encadenan: un error no bloquea el siguiente guardado. */
+      this._saving = p.catch(function () { return false; });
+      return p;
+    },
+
+    clear: function () {
+      /* No borra la nube (no hay DELETE por API); limpia la caché local. */
+      return localAdapter.clear();
+    },
+
+    select: function (c, f) { return localAdapter.select(c, f); },
+    insert: function (c, r) { return localAdapter.insert(c, r); },
+    update: function (c, id, p) { return localAdapter.update(c, id, p); },
+    remove: function (c, id) { return localAdapter.remove(c, id); }
   };
+
+  /* ---------------- Migración única del prototipo ----------------
+     El estado que había en localStorage antes del login se sube a la
+     cuenta la primera vez (decisión de grupo: migrar una vez). Si ya
+     hay blob en la nube, la nube manda. */
+  function migrateLegacy() {
+    try { if (global.localStorage.getItem(MIGRATED_FLAG)) return Promise.resolve('done'); } catch (e) { /* sin storage */ }
+    var legacy = read();
+    if (!legacy || !legacy.profile) {
+      try { global.localStorage.setItem(MIGRATED_FLAG, '1'); } catch (e) { /* sin storage */ }
+      return Promise.resolve('none');
+    }
+    return supabaseAdapter.save(legacy).then(function (ok) {
+      if (ok) {
+        try { global.localStorage.setItem(MIGRATED_FLAG, '1'); } catch (e) { /* sin storage */ }
+        return 'migrated';
+      }
+      return 'failed';
+    }).catch(function () { return 'failed'; });
+  }
 
   var adapter = localAdapter;
 
@@ -108,6 +181,8 @@
       return adapter;
     },
     configureSupabase: function (client) { supabaseAdapter.client = client; },
+    /** El localStorage del prototipo se sube a la cuenta una sola vez. */
+    migrateLegacy: function () { return migrateLegacy(); },
     load: function () { return adapter.load(); },
     save: function (data) { return adapter.save(data); },
     clear: function () { return adapter.clear(); },
