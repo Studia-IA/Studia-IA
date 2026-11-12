@@ -21,6 +21,7 @@
     notes: '',
     tick: null,              // interval de refresco visual (no cuenta nada)
     lastFinishedEndAt: null,
+    taskAtStart: null,       // tarea que había al arrancar: es la que se marca al terminar
     pausedByVisibility: false    // el pomodoro se congeló al ocultar la pestaña
   };
 
@@ -54,7 +55,12 @@
   }
 
   /* ---------------- Timer ---------------- */
-  function settings() { return store.get().settings.pomodoro; }
+  function settings() {
+    /* `autoBreak` lo añade esta versión: si el ajuste no existe todavía
+       (datos antiguos), activado por defecto. */
+    var p = Object.assign({ autoBreak: true }, store.get().settings.pomodoro);
+    return p;
+  }
 
   /* Evita que la pantalla se apague mientras corre el pomodoro. Si el
      navegador no lo soporta (o la pestaña está oculta), se ignora. */
@@ -97,11 +103,23 @@
         cycle: timer.cycle,
         subjectId: timer.subjectId,
         taskId: timer.taskId,
+        taskAtStart: timer.taskAtStart,
         notes: timer.notes,
         lastFinishedEndAt: prev.lastFinishedEndAt || null
       };
       if (extra && extra.lastFinishedEndAt) s.timer.lastFinishedEndAt = extra.lastFinishedEndAt;
     });
+  }
+
+  /* Devuelve el modo de descanso tocaba según los pomodoros completados. */
+  function nextBreakMode() {
+    var p = settings();
+    return timer.cycle % (p.cycle || 4) === 0 ? 'long' : 'short';
+  }
+
+  /* El descanso puede arrancar solo: si no, queda preparado y espera el clic. */
+  function nextBreakAutostarts() {
+    return !!settings().autoBreak;
   }
 
   function secondsFor(mode) {
@@ -183,6 +201,9 @@
   function start() {
     if (timer.running) return;
     timer.running = true;
+    /* La tarea que había al arrancar es la que se marca al terminar: si se
+       cambia durante la ronda, `timer.taskId` es otra y no debe marcarse. */
+    timer.taskAtStart = timer.taskId;
     timer.endAt = Date.now() + timer.remaining * 1000;
     timer.tick = setInterval(onTick, TICK_MS);
     requestWakeLock();
@@ -243,8 +264,7 @@
         });
       }
       timer.cycle += 1;
-      var isLong = timer.cycle % (p.cycle || 4) === 0;
-      var next = isLong ? 'long' : 'short';
+      var next = nextBreakMode();
       timer.mode = next;
       timer.total = secondsFor(next);
       timer.remaining = timer.total;
@@ -255,12 +275,21 @@
         notifyUser('Sesión de estudio completada', 'Has estudiado ' + p.work + ' minutos. Racha: ' + info.current + ' días.');
         checkMilestones(info);
 
-        if (timer.taskId) {
-          var task = store.find('tasks', timer.taskId);
+        if (timer.taskAtStart) {
+          var task = store.find('tasks', timer.taskAtStart);
           if (task) {
             store.updateRow('tasks', task.id, { done: true, completedAt: U.today() });
             ui.toast('Tarea marcada como completada ✓', 'success');
           }
+        }
+
+        /* El descanso arranca solo si está activado y estabas mirando la app:
+           si tabatabas, se deja el descanso preparado sin empezar a escondidas
+           (así no "consume" un descanso cuando vuelves horas después). */
+        if (!skipSession && nextBreakAutostarts() && document.visibilityState === 'visible') {
+          refresh();
+          start();
+          return;   // start() guarda, refresca y actualiza el chip
         }
       }
     } else {
@@ -337,6 +366,97 @@
     } catch (e) {
       ui.toast('No se pudieron activar los avisos.', 'warn');
     }
+  }
+
+  /* Tareas rápidas desde el pomodoro. Solo usamos `store.add`/`store.remove`
+     (API del núcleo) y `ui.formModal`, sin duplicar la lógica de tasks.js. */
+  function quickAddTask() {
+    var subjects = store.get().subjects;
+    ui.formModal({
+      title: 'Nueva tarea',
+      subtitle: 'Se crea como pendiente y queda asociada a este pomodoro.',
+      fields: [
+        { name: 'title', label: 'Tarea', required: true, placeholder: 'Ej. Terminar ejercicios 4-7' },
+        { name: 'subjectId', label: 'Asignatura', type: 'select', value: timer.subjectId || (subjects[0] || {}).id || '', options: subjects.map(function (s) { return { value: s.id, label: s.name }; }) },
+        { name: 'due', label: 'Fecha de entrega', type: 'date', value: U.today() },
+        { name: 'priority', label: 'Prioridad', type: 'select', value: 'media', options: [{ value: 'alta', label: 'Alta' }, { value: 'media', label: 'Media' }, { value: 'baja', label: 'Baja' }] }
+      ],
+      submitLabel: 'Crear tarea',
+      onSubmit: function (v) {
+        /* Si había una tarea en la lista, esa era la "elegida al arrancar"
+           (aunque el reloj estuviera parado) y la nueva la sustituye. */
+        timer.taskAtStart = timer.taskId;
+        var task = store.add('tasks', {
+          title: String(v.title || '').trim(),
+          subjectId: v.subjectId || '',
+          due: v.due || U.today(),
+          priority: v.priority || 'media',
+          notes: '',
+          done: false
+        });
+        timer.taskId = task.id;
+        saveTimer();
+        ui.toast('Tarea creada y asociada al pomodoro', 'success');
+      }
+    });
+  }
+
+  function quickRemoveTask() {
+    var task = store.find('tasks', timer.taskId);
+    if (!task) return;
+    ui.confirm({
+      title: '¿Eliminar esta tarea?',
+      message: '«' + task.title + '» se eliminará de Tareas y del pomodoro.',
+      okLabel: 'Eliminar',
+      danger: true
+    }).then(function (ok) {
+      if (!ok) return;
+      timer.taskId = null;
+      if (timer.taskAtStart === task.id) timer.taskAtStart = null;
+      store.remove('tasks', task.id);
+      saveTimer();
+      refresh();
+      ui.toast('Tarea eliminada', 'info');
+    });
+  }
+
+  function manualAddMinutes() {
+    ui.formModal({
+      title: 'Sesión manual',
+      subtitle: '¿Has estudiado sin el temporizador? Apúntalo aquí.',
+      fields: [
+        { name: 'minutes', label: 'Minutos', type: 'number', required: true, value: 30, min: 1, max: 600 },
+        { name: 'subjectId', label: 'Asignatura', type: 'select', value: timer.subjectId || '', options: [{ value: '', label: 'Sin asignatura' }].concat(store.get().subjects.map(function (s) { return { value: s.id, label: s.name }; })) },
+        { name: 'notes', label: 'Apuntes', placeholder: 'Opcional: qué has estudiado' }
+      ],
+      submitLabel: 'Registrar sesión',
+      onSubmit: function (v) {
+        var raw = parseInt(v.minutes, 10);
+        if (!raw || raw < 1) { ui.toast('Pon al menos 1 minuto.', 'warn'); return false; }
+        var minutes = U.clamp(raw, 1, 600);
+        var result = store.addSession({
+          date: U.today(),
+          minutes: minutes,
+          subjectId: v.subjectId || null,
+          mode: 'manual',
+          notes: String(v.notes || '').trim()
+        });
+        ui.toast('Sesión registrada: ' + minutes + ' min · +' + result.xp + ' XP · racha de ' + result.streak.current + ' días', 'success', 4200);
+      }
+    });
+  }
+
+  function removeSession(s) {
+    ui.confirm({
+      title: '¿Eliminar esta sesión?',
+      message: s.minutes + ' min de ' + store.subjectName(s.subjectId) + '. Se quitan también el XP y la racha que sumó.',
+      okLabel: 'Eliminar',
+      danger: true
+    }).then(function (ok) {
+      if (!ok) return;
+      store.removeSession(s.id);
+      ui.toast('Sesión eliminada', 'info');
+    });
   }
 
   function notificationRow() {
@@ -428,7 +548,13 @@
     })));
 
     var openTasks = store.openTasks();
-    var taskSelect = U.h('select.select.select--sm', { onchange: function () { timer.taskId = taskSelect.value || null; saveTimer(); } }, [
+    var taskSelect = U.h('select.select.select--sm', { onchange: function () {
+      /* Con el reloj en marcha, cambiar la selección no reetiqueta la ronda
+         en curso: la marca sigue yendo a la tarea con la que se arrancó. */
+      timer.taskId = taskSelect.value || null;
+      if (!timer.running) timer.taskAtStart = timer.taskId;
+      saveTimer();
+    } }, [
       U.h('option', { value: '' }, 'Sin tarea asociada')
     ].concat(openTasks.map(function (t) {
       var o = U.h('option', { value: t.id }, t.title);
@@ -436,11 +562,26 @@
       return o;
     })));
 
+    var taskRow = U.h('div.row.gap-2', [
+      U.h('div.grow', taskSelect),
+      U.h('button.icon-btn', { onclick: quickAddTask, title: 'Añadir tarea', 'aria-label': 'Añadir tarea' }, U.icon('plus')),
+      U.h('button.icon-btn', {
+        onclick: quickRemoveTask,
+        title: timer.taskId ? 'Eliminar la tarea asociada' : 'Primero elige una tarea',
+        'aria-label': 'Eliminar la tarea asociada',
+        disabled: !timer.taskId,
+        /* `disabled` real (no solo pointer-events) para que el teclado lo
+           salte; el estilo de deshabilitado va inline porque components.css
+           no lo define y no podemos tocarlo. */
+        style: timer.taskId ? null : { opacity: '.4', cursor: 'not-allowed' }
+      }, U.icon('trash'))
+    ]);
+
     return U.h('div.card', [
       U.h('div.timer', [
         ring,
         U.h('div.row.gap-2.row--wrap', { style: { justifyContent: 'center' } }, [
-          subjectSelect, taskSelect
+          subjectSelect, taskRow
         ]),
         U.h('div.timer__controls', [
           U.h('button.icon-btn', { onclick: function () { setMode('work'); }, title: 'Modo enfoque' }, U.icon('play')),
@@ -453,7 +594,7 @@
         U.h('div.timer__mode-tabs', ['work', 'short', 'long'].map(function (k) {
           return U.h('button.btn.btn--sm' + (timer.mode === k ? '.btn--soft' : '.btn--ghost'), {
             onclick: function () { setMode(k); }
-          }, MODES[k].label);
+          }, MODES[k].label + ' · ' + (secondsFor(k) / 60) + ' min');
         })),
         U.h('p.tiny.soft', 'Ciclo ' + (timer.cycle % (p.cycle || 4)) + ' de ' + (p.cycle || 4) + ' · al completar se guarda la sesión y sube tu racha')
       ])
@@ -477,16 +618,28 @@
     return U.h('div.card', [
       U.h('div.card__head', [
         U.h('h3', 'Sesiones de hoy'),
-        U.h('span.badge', sessions.length)
+        U.h('div.row.gap-1', [
+          U.h('button.btn.btn--sm.btn--ghost', { onclick: manualAddMinutes }, [U.icon('plus'), 'Añadir']),
+          U.h('span.badge', sessions.length)
+        ])
       ]),
       sessions.length ? U.h('div.pomo-sessions', sessions.map(function (s) {
         return U.h('div.pomo-session', [
           U.h('span.pomo-session__dot', { style: { background: store.subjectColor(s.subjectId) } }),
           U.h('span.grow', store.subjectName(s.subjectId)),
-          U.h('span.badge', s.mode === 'pomodoro' ? 'Pomodoro' : 'Libre'),
-          U.h('span.small.strong', s.minutes + ' min')
+          U.h('span.badge', s.mode === 'pomodoro' ? 'Pomodoro' : 'Manual'),
+          U.h('span.small.strong', s.minutes + ' min'),
+          U.h('button.icon-btn', {
+            onclick: function () { removeSession(s); },
+            title: 'Eliminar sesión',
+            'aria-label': 'Eliminar sesión de ' + s.minutes + ' min',
+            style: { width: '28px', height: '28px', flex: '0 0 auto' }
+          }, U.icon('trash'))
         ]);
-      })) : U.h('p.small.soft', 'Todavía no has estudiado hoy. Arranca un pomodoro de 25 minutos.')
+      })) : U.h('div.col.gap-2', [
+        U.h('p.small.soft', 'Todavía no has estudiado hoy. Arranca un pomodoro de 25 minutos o apunta una sesión manual.'),
+        U.h('button.btn.btn--sm.btn--ghost', { onclick: manualAddMinutes }, [U.icon('plus'), 'Registrar sesión manual'])
+      ])
     ]);
   }
 
@@ -506,13 +659,26 @@
       });
       return U.h('div.field', [U.h('label.field__label', label), input]);
     }
+    /* Sin `type:'checkbox'` el input valdría "on"/"off" como valor. */
+    function toggle(label, key, help) {
+      var input = U.h('input', { type: 'checkbox', checked: !!p[key], style: { width: '18px', height: '18px', accentColor: 'var(--brand-500)', cursor: 'pointer' } });
+      input.addEventListener('change', function () {
+        store.update(function (s) { s.settings.pomodoro[key] = input.checked; });
+        refresh();
+      });
+      return U.h('label.row.row--between.gap-2', { style: { cursor: 'pointer' } }, [
+        U.h('div', [U.h('div.small.strong', label), U.h('div.tiny.soft', help)]),
+        input
+      ]);
+    }
     return U.h('div.card', [
       U.h('h3.mb-2', 'Ajustes del temporizador'),
       U.h('div.col.gap-2', [
         num('Foco (min)', 'work', 5, 90),
         num('Descanso corto (min)', 'short', 1, 30),
         num('Descanso largo (min)', 'long', 5, 60),
-        num('Ciclos antes del descanso largo', 'cycle', 2, 8)
+        num('Ciclos antes del descanso largo', 'cycle', 2, 8),
+        toggle('Descanso automático', 'autoBreak', 'Al terminar el enfoque, el descanso empieza solo si tienes la app abierta.')
       ]),
       notificationRow()
     ]);
@@ -575,10 +741,17 @@
     var saved = store.get().timer;
     if (!saved) return false;
     timer.mode = MODES[saved.mode] ? saved.mode : 'work';
-    timer.total = saved.total || secondsFor(timer.mode);
+    /* Si los ajustes cambiaron desde que se guardó, el total guardado (p. ej.
+       1500) no cuadra con el modo (p. ej. descanso de 5 min) y el anillo
+       arranca casi vacío: se recalcula y el tiempo restante se recorta en la
+       línea de más abajo con `min(remaining, total)`. */
+    timer.total = secondsFor(timer.mode);
     timer.cycle = saved.cycle || 0;
     timer.subjectId = saved.subjectId || null;
     timer.taskId = saved.taskId || null;
+    /* Datos guardados antes de `taskAtStart`: la única tarea conocida es la
+       seleccionada, así que se toma como punto de partida. */
+    timer.taskAtStart = saved.taskAtStart !== undefined ? saved.taskAtStart : timer.taskId;
     timer.notes = saved.notes || '';
     timer.lastFinishedEndAt = saved.lastFinishedEndAt || null;
 
@@ -586,7 +759,7 @@
       timer.endAt = saved.endAt;
       var left = Math.round((saved.endAt - Date.now()) / 1000);
       if (left > 0) {
-        timer.remaining = left;
+        timer.remaining = Math.min(left, timer.total);
         start();                       // reanuda con el tiempo real restante
         return true;
       }
@@ -613,7 +786,9 @@
       timer.remaining = timer.total;
     }
     store.subscribe(function () {
-      if (Studia.router.current() === 'study') refresh();
+      /* Solo refresca la vista Estudio: si estamos en otra, `refresh()` hace
+         nothing, así que cambiar tareas desde Tareas no provoca bucles. */
+      refresh();
     });
     document.addEventListener('visibilitychange', onVisibility);
     global.addEventListener('pagehide', flushOnExit);
