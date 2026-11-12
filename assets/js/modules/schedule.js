@@ -267,7 +267,12 @@
         ])
       ]),
       subjectFilterBar(),
-      U.h('div.tt', [head, body]),
+      store.get().timetable.length ? U.h('div.tt', [head, body]) : U.h('div.empty', { style: { margin: '8px 18px 18px' } }, [
+        U.h('div.empty__icon', U.icon('clock')),
+        U.h('h4', 'Todavía no tienes horario'),
+        U.h('p', 'Añade tus clases de la semana y verás aquí las horas por asignatura, los solapamientos y las clases de cada día.'),
+        U.h('button.btn.btn--primary.btn--sm', { onclick: function () { openForm(null, { day: U.dayIndex(new Date()), start: '09:00', end: '10:30' }); } }, [U.icon('plus'), 'Añadir clase'])
+      ]),
       U.h('p.tt-hint.tiny.soft', 'Desliza en horizontal para ver toda la semana')
     ]);
   }
