@@ -629,8 +629,12 @@
           U.h('button.icon-btn', { onclick: reset, title: 'Reiniciar' }, U.icon('reset')),
           U.h('button.icon-btn', { onclick: function () { setMode(timer.mode === 'work' ? 'short' : 'work'); }, title: 'Cambiar modo' }, U.icon('timer'))
         ]),
-        U.h('div.timer__mode-tabs', ['work', 'short', 'long'].map(function (k) {
+        /* Tres columnas iguales y texto que envuelve: en 360/390 px las
+           etiquetas con minutos no caben en una fila y desbordaban la
+           tarjeta (scroll horizontal en movil). */
+        U.h('div.timer__mode-tabs', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' } }, ['work', 'short', 'long'].map(function (k) {
           return U.h('button.btn.btn--sm' + (timer.mode === k ? '.btn--soft' : '.btn--ghost'), {
+            style: { height: 'auto', minHeight: '40px', padding: '5px 6px', whiteSpace: 'normal', lineHeight: '1.15' },
             onclick: function () { setMode(k); }
           }, MODES[k].label + ' · ' + (secondsFor(k) / 60) + ' min');
         })),
