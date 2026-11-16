@@ -15,6 +15,7 @@
     total: 25 * 60,
     running: false,
     endAt: null,             // epoch ms en que debe terminar el tramo actual
+    pausedEndAt: null,       // final real si la ronda se congelo al ocultar la pestana
     cycle: 0,
     subjectId: null,
     taskId: null,
@@ -99,19 +100,29 @@
         total: timer.total,
         remaining: timer.remaining,
         running: timer.running,
-        endAt: timer.running ? timer.endAt : null,
+        endAt: timer.running ? timer.endAt : (timer.pausedEndAt ? timer.endAt : null),
+        pausedEndAt: timer.pausedEndAt || null,
         cycle: timer.cycle,
         subjectId: timer.subjectId,
         taskId: timer.taskId,
         taskAtStart: timer.taskAtStart,
         notes: timer.notes,
+        /* `endAt` y `pausedEndAt` se escriben siempre (aunque sean null):
+           store.update fusiona en profundidad y un null borra el valor
+           anterior; si se omitieran, quedaria el endAt de otra sesion. */
         lastFinishedEndAt: prev.lastFinishedEndAt || null
       };
-      if (extra && extra.lastFinishedEndAt) s.timer.lastFinishedEndAt = extra.lastFinishedEndAt;
+      if (extra && extra.lastFinishedEndAt !== undefined) s.timer.lastFinishedEndAt = extra.lastFinishedEndAt;
     });
   }
 
-  /* Devuelve el modo de descanso tocaba según los pomodoros completados. */
+  /* La ronda terminada era un descanso si ademas de no sumar sesion tenia
+     modo descanso: `skipSession` es true justo en ese caso. */
+  function wasBreak(skipSession) {
+    return skipSession || timer.mode !== 'work';
+  }
+
+  /* Devuelve el modo de descanso que tocaba segun los pomodoros completados. */
   function nextBreakMode() {
     var p = settings();
     return timer.cycle % (p.cycle || 4) === 0 ? 'long' : 'short';
@@ -148,44 +159,55 @@
     return parked;
   }
 
-  /* La pestaña oculta congela el intervalo: guardamos al instante. El
-     pomodoro sigue corriendo en tiempo real (mismo criterio que al
-     recargar): al volver, si debería haber terminado se cierra la ronda;
-     si no, se reanuda. */
+  /* La pestaña oculta: el intervalo se congela, pero `endAt` sigue siendo el
+     final REAL de la ronda. Se marca la ronda como congelada (`pausedEndAt`)
+     y se guarda: el reloj congelado no se gasta, mientras que el tiempo real
+     corre igual que al recargar la página. Si al volver ya había terminado,
+     se cierra la ronda; si no, se reanuda con el tiempo real restante. */
   function onVisibility() {
     if (document.visibilityState === 'hidden') {
-      if (timer.running) { commitWork(); timer.pausedByVisibility = true; }
+      if (timer.running) {
+        timer.remaining = Math.max(0, Math.round((timer.endAt - Date.now()) / 1000));
+        stop();
+        timer.pausedEndAt = timer.endAt;       // congelada con final real
+        saveTimer();
+        try { store.flush(); } catch (e) { /* sin storage */ }
+        timer.pausedByVisibility = true;
+      }
       refresh();
       updateChip();
     } else if (timer.pausedByVisibility) {
       timer.pausedByVisibility = false;
+      timer.pausedEndAt = null;
+      var left = timer.endAt ? Math.round((timer.endAt - Date.now()) / 1000) : 0;
       if (timer.endAt && Date.now() >= timer.endAt) {
         timer.remaining = 0;
         finish(timer.mode !== 'work');
         return;
       }
-      if (!timer.running && timer.endAt && timer.remaining > 0) {
-        timer.running = true;
-        timer.remaining = Math.max(1, Math.round((timer.endAt - Date.now()) / 1000));
-        timer.tick = setInterval(onTick, TICK_MS);
-        requestWakeLock();
-        refresh();
-        updateChip();
-        saveTimer();
+      if (!timer.running && timer.endAt && left > 0) {
+        timer.remaining = Math.max(1, left);
+        start();
       }
     }
   }
 
-  /* Antes de cerrar o recargar: consolidar y escribir en el acto. */
+  /* Antes de cerrar o recargar: consolidar y escribir en el acto. No se
+     aparca la ronda: si está en marcha se guarda con `running` y `endAt`,
+     así al recargar se reanuda con el tiempo real restante y, si venció
+     mientras la app estaba cerrada, se cierra al volver (una sola vez). */
   function flushOnExit() {
-    commitWork();
+    if (timer.running) timer.remaining = Math.max(0, Math.round((timer.endAt - Date.now()) / 1000));
+    saveTimer();
+    try { store.flush(); } catch (e) { /* sin storage */ }
   }
 
   function setMode(mode, autostart) {
     if (mode === timer.mode) {
       /* Clic en el modo actual: no reiniciamos la ronda, solo paramos el
-         reloj y guardamos lo llevado si estaba en marcha. */
-      if (commitWork()) { refresh(); updateChip(); }
+         reloj y guardamos lo llevado si estaba en marcha. `refreshForced`
+         porque el boton "Pausar/Empezar" cambia segun `running`. */
+      if (commitWork()) { refreshForced(); updateChip(); }
       return;
     }
     parkWork();
@@ -193,7 +215,7 @@
     timer.total = secondsFor(mode);
     timer.remaining = timer.total;
     if (autostart) start();
-    refresh();
+    refreshForced();
     updateChip();
     saveTimer();
   }
@@ -204,7 +226,10 @@
     /* La tarea que había al arrancar es la que se marca al terminar: si se
        cambia durante la ronda, `timer.taskId` es otra y no debe marcarse. */
     timer.taskAtStart = timer.taskId;
-    timer.endAt = Date.now() + timer.remaining * 1000;
+    if (!timer.pausedEndAt || !timer.endAt) {
+      timer.endAt = Date.now() + timer.remaining * 1000;
+    }
+    timer.pausedEndAt = null;   // si venia congelada, vuelve a estar en marcha
     timer.tick = setInterval(onTick, TICK_MS);
     requestWakeLock();
     refresh();
@@ -231,7 +256,7 @@
   function reset() {
     parkWork();
     timer.remaining = timer.total;
-    refresh();
+    refreshForced();
     updateChip();
     saveTimer();
   }
@@ -243,12 +268,23 @@
     updateChip();
   }
 
+  /* Estado visible en el anillo: una ronda congelada al ocultar la pestana
+     (o guardada con la app cerrada durante la ronda) muestra el tiempo real
+     que queda, no el reloj congelado. */
+  function displayRemaining() {
+    var frozen = !timer.running && timer.endAt && (timer.pausedEndAt || timer.pausedByVisibility);
+    if (frozen) return Math.max(0, Math.min(timer.remaining, Math.round((timer.endAt - Date.now()) / 1000)));
+    return timer.remaining;
+  }
+
   /* Se terminó el pomodoro (o el descanso). Con `skipSession` solo se
      cierra el temporizador: es el caso del descanso terminado mientras la
      app estaba cerrada, sin estudio que registrar. */
   function finish(skipSession) {
     var endedAt = timer.endAt || Date.now();
+    var wasRest = wasBreak(skipSession);   // timer.mode se reasigna mas abajo
     stop();
+    timer.pausedEndAt = null;
     if (!skipSession) beep();
     if (timer.mode === 'work') {
       var p = settings();
@@ -300,7 +336,9 @@
     }
     refresh();
     updateChip();
-    saveTimer({ lastFinishedEndAt: endedAt });
+    /* El `endAt` se quita con el reloj parado: si se guarda, al volver a
+       visible se cerraria otra ronda encima de la que acabamos de cerrar. */
+    saveTimer({ lastFinishedEndAt: wasRest ? null : endedAt });
   }
 
   function checkMilestones(info) {
@@ -483,10 +521,10 @@
   function updateChip() {
     var chip = document.getElementById('timerChip');
     if (!chip) return;
-    if (!timer.running && timer.mode === 'work' && timer.remaining === timer.total) { chip.hidden = true; return; }
+    var shown = displayRemaining();
+    if (!timer.running && !timer.pausedEndAt && timer.mode === 'work' && shown === timer.total) { chip.hidden = true; return; }
     chip.hidden = false;
-    var label = U.fmtClock(timer.remaining);
-    chip.querySelector('[data-timer-time]').textContent = label;
+    chip.querySelector('[data-timer-time]').textContent = U.fmtClock(shown);
     chip.querySelector('[data-timer-mode]').textContent = MODES[timer.mode].label;
   }
 
@@ -651,11 +689,14 @@
         var v = U.clamp(+input.value || p[key], min, max);
         input.value = v;
         store.update(function (s) { s.settings.pomodoro[key] = v; });
-        if (timer.mode === key || (key === 'work' && timer.mode === 'work')) {
+        /* La ronda en marcha conserva su `total`: cambiar los minutos no
+           reinicia el tiempo que ya llevas estudiado. El valor nuevo se
+           aplica a la siguiente ronda (y al anillo si esta parado). */
+        if (!timer.running) {
           timer.total = secondsFor(timer.mode);
-          if (!timer.running) timer.remaining = timer.total;
+          timer.remaining = timer.total;
         }
-        refresh();
+        refreshForced();
       });
       return U.h('div.field', [U.h('label.field__label', label), input]);
     }
@@ -664,7 +705,7 @@
       var input = U.h('input', { type: 'checkbox', checked: !!p[key], style: { width: '18px', height: '18px', accentColor: 'var(--brand-500)', cursor: 'pointer' } });
       input.addEventListener('change', function () {
         store.update(function (s) { s.settings.pomodoro[key] = input.checked; });
-        refresh();
+        refreshForced();
       });
       return U.h('label.row.row--between.gap-2', { style: { cursor: 'pointer' } }, [
         U.h('div', [U.h('div.small.strong', label), U.h('div.tiny.soft', help)]),
@@ -719,21 +760,38 @@
 
   /* ---------------- Auxiliares ---------------- */
   function paint() {
+    var shown = displayRemaining();
     var display = document.querySelector('[data-timer-display]');
-    if (display) display.textContent = U.fmtClock(timer.remaining);
+    if (display) display.textContent = U.fmtClock(shown);
     var label = document.querySelector('[data-timer-mode-label]');
     if (label) label.textContent = MODES[timer.mode].label;
     var ring = document.querySelector('.timer__prog');
     if (ring) {
       var C = 2 * Math.PI * 118;
-      var pct = timer.total ? (timer.remaining / timer.total) : 0;
+      var pct = timer.total ? (shown / timer.total) : 0;
       ring.setAttribute('stroke-dashoffset', C * (1 - pct));
     }
   }
 
+  /* Solo refresca la vista Estudio. Con el reloj corriendo no se re-renderiza
+     (salvo cambios de modo/running): pintar cada tick borraría el foco del
+     usuario (p. ej. con el desplegable de tarea abierto). `paint()` sigue
+     actualizando el anillo y el reloj en cada tick. */
+  var lastRenderSig = '';
+  function renderSignature() {
+    return timer.mode + '|' + timer.running + '|' + (timer.pausedEndAt ? 'pausada' : '') + '|' + (timer.running ? '' : displayRemaining());
+  }
+  function refreshForced() {
+    lastRenderSig = '';
+    refresh();
+  }
   function refresh() {
     var main = document.getElementById('appMain');
-    if (main && Studia.router.current() === 'study') render(main);
+    if (!main || Studia.router.current() !== 'study') return;
+    var sig = renderSignature();
+    if (sig === lastRenderSig) return;
+    lastRenderSig = sig;
+    render(main);
   }
 
   /* Recupera el pomodoro guardado. Devuelve false si no había ninguno. */
@@ -741,11 +799,14 @@
     var saved = store.get().timer;
     if (!saved) return false;
     timer.mode = MODES[saved.mode] ? saved.mode : 'work';
-    /* Si los ajustes cambiaron desde que se guardó, el total guardado (p. ej.
-       1500) no cuadra con el modo (p. ej. descanso de 5 min) y el anillo
-       arranca casi vacío: se recalcula y el tiempo restante se recorta en la
-       línea de más abajo con `min(remaining, total)`. */
-    timer.total = secondsFor(timer.mode);
+    /* El total se recalcula SIEMPRE, salvo cuando hay una ronda en curso
+       (en marcha o congelada al ocultar/cerrar): entonces se respeta el
+       total guardado para conservar la proporcion real del anillo, porque
+       los minutos del modo pueden haberse cambiado a mitad de ronda. En
+       cualquier otro caso (parado) se recalcula y el restante se recorta
+       con `min(remaining, total)`. */
+    var inProgress = !!(saved.mode === timer.mode && (saved.running || saved.pausedEndAt));
+    timer.total = inProgress && saved.total ? saved.total : secondsFor(timer.mode);
     timer.cycle = saved.cycle || 0;
     timer.subjectId = saved.subjectId || null;
     timer.taskId = saved.taskId || null;
@@ -754,6 +815,10 @@
     timer.taskAtStart = saved.taskAtStart !== undefined ? saved.taskAtStart : timer.taskId;
     timer.notes = saved.notes || '';
     timer.lastFinishedEndAt = saved.lastFinishedEndAt || null;
+    /* Ronda congelada al ocultar la pestaña (o app cerrada con ella oculta):
+       el reloj muestra el tiempo real que queda, no el congelado. */
+    timer.pausedEndAt = saved.pausedEndAt && !saved.running ? saved.pausedEndAt : null;
+    timer.pausedByVisibility = false;
 
     if (saved.running && saved.endAt) {
       timer.endAt = saved.endAt;
@@ -765,10 +830,26 @@
       }
       if (saved.endAt !== saved.lastFinishedEndAt) {
         timer.remaining = 0;
-        finish(timer.mode !== 'work');  // terminó cerrado: cierra la ronda sin duplicar
+        var wasRest = timer.mode !== 'work';
+        finish(wasRest);                 // terminó cerrado: cierra la ronda sin duplicar
         return true;
       }
       timer.remaining = timer.total;
+    } else if (timer.pausedEndAt) {
+      /* Congelada: `endAt` es el final real; si ya venció, se cierra la
+         ronda al instante (con su sesión) en vez de reanudarse. Si aún
+         queda tiempo, se reanuda con ese final real (no se gasta el reloj
+         congelado): al recargar no habrá otro evento de visibilidad. */
+      var leftFrozen = Math.round((timer.pausedEndAt - Date.now()) / 1000);
+      timer.endAt = timer.pausedEndAt;
+      if (leftFrozen > 0) {
+        timer.remaining = Math.min(saved.remaining || leftFrozen, timer.total);
+        start();
+        return true;
+      }
+      timer.remaining = 0;
+      finish(timer.mode !== 'work');
+      return true;
     } else {
       timer.remaining = Math.min(saved.remaining || timer.total, timer.total);
     }
