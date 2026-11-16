@@ -259,6 +259,16 @@ Harness.prototype.reload = function () {
     .then(function () { return self.waitForApp(); });
 };
 
+Harness.prototype.screenshot = function (file) {
+  var self = this;
+  return this.eval_("(function(){document.body.classList.add('is-ready');return true;})()").then(function () {
+    return self.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  }).then(function (r) {
+    fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
+    return file;
+  });
+};
+
 Harness.prototype.setVisible = function (visible) {
   var v = visible ? 'visible' : 'hidden';
   return this.eval_("Object.defineProperty(document,'visibilityState',{configurable:true,get:function(){return '" + v + "';}});Object.defineProperty(document,'hidden',{configurable:true,get:function(){return " + (!visible) + ";}});document.dispatchEvent(new Event('visibilitychange'));");
