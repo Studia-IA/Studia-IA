@@ -85,3 +85,53 @@ Progreso, ya aplicadas en `progress.js`.
   notificaciones y ver si están activados, bloqueados o no disponibles.
 - Probado con el arnés: la tarea sobrevive a recargar, `start` pide el wake lock
   y `pause` lo libera; Estudio sigue sin desbordar a 390/360 px.
+
+## Reverificación tras el merge · 16 nov 2026
+
+Rama `joan` fusionó `main` (`8108af1`, calendario y horario de Carles) sin
+conflictos. Las pruebas de esta Issue quedan como test permanente en
+`tools/arnes/progress.test.js` (junto a `pomodoro.test.js` y `mobile.test.js`).
+
+**Progreso · 0 sesiones**
+- Total en minutos ("0 min", no "0 h"), sin línea ni barras, tres avisos de
+  estado vacío (gráfico, días de la semana y reparto).
+- Mapa de calor completo (16 × 7 = 112 celdas) y sin ningún día activo.
+- Racha "0 días", nivel 1 con 0 XP e hitos 0/6. Sin `NaN`/`undefined`.
+
+**Progreso · 120 sesiones repartidas en 88 días**
+- Total del rango correcto (30 d = 30 h; 90 d = 60 h) y 30/90 puntos en la línea.
+- Racha actual, nivel y XP coinciden con `store.streakInfo()`/`levelInfo()`.
+- Reparto con 4 barras (3 asignaturas creadas + sesiones sin asignatura), mapa
+  con días activos, 7 barras en "Días de la semana" e hitos que coinciden con
+  `Studia.rewards.status()`.
+- "Acumulado" + "90 d" redibuja la línea y recalcula el total sin errores.
+
+**Móvil (CDP, viewport real)**
+- Progreso a **390 px** y **360 px**, con 0 y con 120 sesiones: `clientWidth`
+  real, sin scroll horizontal de página y sin elementos desbordados.
+- Consola limpia en todas las pasadas.
+
+**Pomodoro (regresión de esta ronda)**
+- Las pestañas de modo van en cuadrícula de 3 columnas: a 390/360 px ya no hay
+  scroll horizontal (antes medían 489 px por los minutos añadidos en `f8976c1`).
+- `pomodoro.test.js`: 38/38 en verde.
+
+**Resultado**: 40 comprobaciones en verde (`progress.test.js`), 0 fallos,
+1 aviso.
+
+**Aviso para Héctor (`core/`, fuera de mi módulo)**
+- `dashboard.js:52` compara `store.get().sessions[iso]`, pero `sessions` es un
+  **array** (no un objeto por fecha): siempre da 0. Con 0 minutos hoy pero
+  sesiones ayer, el hero dice "Llevas 29 días sin estudiar" mientras el mismo
+  hero muestra "88 días de racha". Debería usar `store.minutesOn(iso)` o
+  `sessions.some(...)`.
+- `store.removeSession()` (core) no descuenta XP ni racha, aunque el modal de
+  sesiones manuales promete actualizar el progreso.
+- Si se publica esta ronda, toca subir la caché (sigue en `0.5.7`); `index.html`
+  y `main.js` son de Héctor.
+
+**Cambio de comportamiento (a validar por Héctor)**
+- Recargar o cerrar la pestaña con una ronda en marcha ahora **reanuda** el
+  pomodoro con el tiempo real restante (antes quedaba en pausa). Si venció con
+  la app cerrada, la sesión se cuenta **una sola vez** al volver y pasa al
+  descanso correspondiente.
