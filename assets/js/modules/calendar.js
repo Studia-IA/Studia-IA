@@ -174,11 +174,11 @@
       if (cell.iso === view.selected) classes.push('cal__cell--selected');
       if (U.dayIndex(cell.date) >= 5) classes.push('cal__cell--weekend');
 
+      var cellLabel = U.fmtDate(cell.iso, { weekday: true }) + ' · ' + String(cell.date.getDate()).padStart(2, '0') + '/' + String(cell.date.getMonth() + 1).padStart(2, '0') + ' · ' + (evs.length ? evs.length + (evs.length === 1 ? ' evento' : ' eventos') : 'sin eventos');
       var list = U.h('div.cal__events');
       evs.slice(0, 3).forEach(function (e) {
         list.appendChild(U.h('button.cal__event.cal__event--' + e.type, {
           type: 'button',
-          title: e.title,
           draggable: 'true',
           'aria-label': U.fmtDate(cell.iso, { weekday: true }) + ' · abrir «' + e.title + '»',
           onclick: function (ev) {
@@ -205,6 +205,8 @@
 
       var node = U.h('button', {
         class: classes.join(' '),
+        'aria-label': cellLabel,
+        title: cellLabel,
         onclick: function () { view.selected = cell.iso; refresh(); },
         ondragover: function (ev) {
           if (!dragEvent) return;
@@ -316,7 +318,7 @@
             ]);
           }))
         ]) : null,
-        U.h('div.day-list', evs.length ? evs.map(function (e) {
+        U.h('div.day-list', (evs.length ? evs.map(function (e) {
           return U.h('div.day-item.day-item--' + e.type, [
             U.h('div.grow', [
               U.h('div.day-item__title', e.title),
@@ -334,7 +336,8 @@
           U.h('div.empty__icon', U.icon('calendar')),
           U.h('p.small', 'Sin eventos este día.'),
           U.h('button.btn.btn--primary.btn--sm', { onclick: function () { openEventForm(null, iso); } }, [U.icon('plus'), 'Añadir evento'])
-        ])])
+        ])
+        ]).concat(evs.length ? [U.h('button.btn.btn--ghost.btn--block.btn--sm', { onclick: function () { openEventForm(null, iso); } }, [U.icon('plus'), 'Añadir evento a este día'])] : []))
       ]),
       U.h('div.card', [
         U.h('h3.mb-2', 'Acciones rápidas'),
