@@ -329,8 +329,7 @@
     var c = existing || Object.assign({ subjectId: '', day: 0, start: '09:00', end: '10:30', room: '', type: 'class' }, defaults || {});
     var subjectOptions = store.get().subjects.map(function (s) { return { value: s.id, label: s.name }; });
 
-    var form = U.h('form', { onsubmit: function (ev) { ev.preventDefault(); if (submit() !== false) m.close(); } });
-    var m = { close: function () {} };
+    var form = U.h('form', { onsubmit: function (ev) { ev.preventDefault(); if (submit() !== false) ui.closeAllModals(); } });
     var inputs = {};
 
     function fieldRow(f) {
@@ -402,7 +401,7 @@
         buildInput({ name: 'room', placeholder: 'B-204, Lab. 3…', value: c.room }),
         isNew ? null : U.h('button.btn.btn--danger', {
           style: { flex: 'none', height: '42px' },
-          onclick: function () { removeClass(c, m); }
+          onclick: function () { removeClass(c); }
         }, [U.icon('trash'), 'Eliminar'])
       ])
     ]));
@@ -436,19 +435,18 @@
       refresh();
     }
 
-    m = ui.modal({
+    ui.modal({
       title: isNew ? 'Nueva clase' : 'Editar clase',
       subtitle: 'El horario se actualiza al instante y avisa de solapamientos.',
       body: form,
       actions: [
         { label: 'Cancelar', variant: 'ghost' },
-        { label: isNew ? 'Añadir al horario' : 'Guardar', variant: 'primary', onClick: function () { if (submit() !== false) m.close(); return false; } }
-      ],
-      onOpen: function (api) { m = api; }
+        { label: isNew ? 'Añadir al horario' : 'Guardar', variant: 'primary', onClick: function () { if (submit() !== false) ui.closeAllModals(); return false; } }
+      ]
     });
   }
 
-  function removeClass(c, modalApi) {
+  function removeClass(c) {
     ui.confirm({
       title: '¿Eliminar esta clase?',
       message: U.DIAS[c.day] + ' ' + c.start.slice(0, 5) + '–' + c.end.slice(0, 5) + ' · ' + store.subjectName(c.subjectId) + '. Se quitará del horario.',
@@ -456,7 +454,7 @@
       danger: true
     }).then(function (ok) {
       if (!ok) return;
-      if (modalApi) modalApi.close();
+      ui.closeAllModals();
       store.remove('timetable', c.id);
       ui.toast('Clase eliminada del horario', 'success');
       refresh();
