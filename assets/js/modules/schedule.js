@@ -105,6 +105,34 @@
       .some(function (p) { return p[0] === id || p[1] === id; });
   }
 
+  /* Devuelve la clase de ese día que pisa el tramo [s,e), o null. */
+  function overlapAt(day, s, e, exceptId) {
+    var list = store.get().timetable.filter(function (c) {
+      return c.day === day && c.id !== exceptId;
+    });
+    for (var i = 0; i < list.length; i++) {
+      var cs = U.timeToMinutes(list[i].start), ce = U.timeToMinutes(list[i].end);
+      if (s < ce && cs < e) return list[i];
+    }
+    return null;
+  }
+
+  /* Hueco libre más cercano a partir de min. Si no hay sitio antes del final
+     del rango, devuelve -1. */
+  function firstFreeFrom(day, min, want, rangeEnd) {
+    var dur = Math.max(30, want);
+    var busy = store.get().timetable.filter(function (c) { return c.day === day; })
+      .map(function (c) { return [U.timeToMinutes(c.start), U.timeToMinutes(c.end)]; })
+      .sort(function (a, b) { return a[0] - b[0]; });
+    var cur = min;
+    for (var i = 0; i < busy.length && cur + dur <= rangeEnd; i++) {
+      if (busy[i][1] <= cur) continue;
+      if (busy[i][0] >= cur + dur) break;
+      cur = busy[i][1];
+    }
+    return cur + dur <= rangeEnd ? cur : -1;
+  }
+
   /* ---------------- Resumen ---------------- */
   function weeklySummary() {
     var bySubject = {};
@@ -128,6 +156,22 @@
       scheduleCard(),
       sideColumn()
     ]));
+  }
+
+  /* Propuesta razonable para el botón "+ Clase": hoy (o el primer día que
+     tenga hueco) a la primera hora libre. */
+  function nextFreeSlot(startMin, endMin) {
+    var today = U.dayIndex(new Date());
+    var from = view.showWeekend ? 0 : Math.min(today, 4);
+    var to = view.showWeekend ? 6 : 4;
+    for (var step = 0; step <= to - from; step++) {
+      var day = (from + step) % (to + 1);
+      var libre = firstFreeFrom(day, startMin, 90, endMin);
+      if (libre >= 0) {
+        return { day: day, start: U.minutesToTime(libre), end: U.minutesToTime(Math.min(libre + 90, endMin)) };
+      }
+    }
+    return null;
   }
 
   function scheduleCard() {
@@ -180,7 +224,7 @@
           var rect = col.getBoundingClientRect();
           var minutes = startMin + Math.round((ev.clientY - rect.top) / HOUR_H * 60 / 15) * 15;
           minutes = U.clamp(minutes, startMin, endMin - 60);
-          openForm(null, { day: day, start: U.minutesToTime(minutes), end: U.minutesToTime(Math.min(minutes + 90, endMin)) });
+          openForm(null, { day: day, start: U.minutesToTime(minutes), end: U.minutesToTime(Math.min(minutes + 90, endMin)) }, true);
         });
         col.addEventListener('dragover', function (ev) {
           if (!dragClass) return;
@@ -323,10 +367,35 @@
     ]);
   }
 
-  /* ---------------- CRUD ---------------- */
-  function openForm(existing, defaults) {
+  function notifyOverlap(day, s, e, exceptId) {
+    var hit = overlapAt(day, s, e, exceptId);
+    if (hit) {
+      ui.toast('Se solapa con ' + store.subjectName(hit.subjectId) + ' (' + hit.start.slice(0, 5) + '–' + hit.end.slice(0, 5) + ')', 'warn');
+      return true;
+    }
+    return false;
+  }
+
+  /* hueco: franja vacía propuesta al crear una clase (clic en la rejilla) */
+  function openForm(existing, defaults, hueco) {
     var isNew = !existing;
+    var range = visibleHoursRange();
+    var startMin = range.startH * 60, endMin = range.endH * 60;
     var c = existing || Object.assign({ subjectId: '', day: 0, start: '09:00', end: '10:30', room: '', type: 'class' }, defaults || {});
+    if (hueco && isNew) {
+      var libre = firstFreeFrom(c.day, U.clamp(U.timeToMinutes(c.start), startMin, endMin - 30), 90, endMin);
+      if (libre >= 0) {
+        c.start = U.minutesToTime(libre);
+        c.end = U.minutesToTime(Math.min(libre + 90, endMin));
+      } else {
+        var slot = nextFreeSlot(startMin, endMin);
+        if (slot) {
+          c.day = slot.day; c.start = slot.start; c.end = slot.end;
+        } else {
+          ui.toast('No queda ningún hueco libre de 1 hora en la semana', 'warn');
+        }
+      }
+    }
     var subjectOptions = store.get().subjects.map(function (s) { return { value: s.id, label: s.name }; });
 
     var form = U.h('form', { onsubmit: function (ev) { ev.preventDefault(); if (submit() !== false) ui.closeAllModals(); } });
@@ -339,9 +408,6 @@
       if (f.hint) el.appendChild(U.h('span.field__hint', f.hint));
       return el;
     }
-
-    var range = visibleHoursRange();
-    var startMin = range.startH * 60, endMin = range.endH * 60;
 
     function hourLabel(m) {
       var h = Math.floor(m / 60);
@@ -422,9 +488,32 @@
         ui.toast('La hora de fin debe ser posterior a la de inicio', 'warn');
         return false;
       }
+      var solapa = overlapAt(+values.day, U.timeToMinutes(values.start), U.timeToMinutes(values.end), existing && existing.id);
       var payload = {
         subjectId: values.subjectId, day: +values.day, start: values.start, end: values.end, room: values.room, type: values.type
       };
+      if (solapa) {
+        var avisoHecho = false;
+        ui.confirm({
+          title: 'Horario solapado',
+          message: 'Se solapa con ' + store.subjectName(solapa.subjectId) + ' (' + solapa.start.slice(0, 5) + '–' + solapa.end.slice(0, 5) + '). ¿Quieres guardarlo igualmente?',
+          okLabel: 'Guardar igualmente',
+          danger: true
+        }).then(function (ok) {
+          if (!ok) return;
+          guardar(payload);
+          if (!avisoHecho) {
+            avisoHecho = true;
+            ui.toast('Guardada en solapamiento', 'info');
+          }
+        });
+        return false;
+      }
+      guardar(payload);
+      return true;
+    }
+
+    function guardar(payload) {
       if (isNew) {
         store.add('timetable', payload);
         ui.toast('Clase añadida al horario', 'success');
