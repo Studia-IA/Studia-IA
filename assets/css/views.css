@@ -172,12 +172,36 @@
 .tt__class span { font-size: .68rem; font-weight: 500; opacity: .78; }
 .tt__class--conflict { outline: 2px dashed var(--rose-500); outline-offset: -2px; }
 
+/* Botones para mover la clase sin arrastrar (móvil y teclado) */
+.tt__moves {
+  position: absolute; top: 3px; right: 3px; z-index: 5;
+  display: flex; gap: 2px;
+  opacity: 0; transition: opacity .15s ease;
+}
+.tt__class:hover .tt__moves, .tt__class:focus-visible .tt__moves, .tt__class:focus-within .tt__moves { opacity: 1; }
+.tt__move {
+  display: grid; place-items: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); color: var(--text-muted);
+  cursor: pointer;
+}
+.tt__move:hover { color: var(--text); background: var(--surface-2); }
+.tt__move:focus-visible { opacity: 1; outline: 2px solid var(--brand-500); outline-offset: 1px; }
+.tt__move .icon { width: 14px; height: 14px; }
+.tt__move--flip { transform: rotate(180deg); }
+
 @media (max-width: 860px) {
   .tt { overflow-x: auto; overscroll-behavior-x: contain; }
-  .tt__head, .tt__body { min-width: 640px; }
+  /* El ancho mínimo del horario lo pone el JS según los días visibles,
+     así la columna de horas y las de días mantienen el mismo ancho. */
+  .tt__head, .tt__body { min-width: var(--tt-min-w, 640px); }
   /* La columna de horas se queda fija al desplazar la semana */
   .tt__corner, .tt__hours { position: sticky; left: 0; z-index: 3; background: var(--surface-2); }
   .tt-hint { display: block; padding: 8px 16px 12px; }
+  /* Sin puntero fino: los botones de mover van siempre visibles */
+  .tt__moves { opacity: 1; }
+  .tt__move { width: 28px; height: 28px; }
 }
 
 /* ================= Estudio / Pomodoro ================= */

@@ -21,6 +21,7 @@
   var dragCol = null;
   var dragMoved = false;
   var suppressClick = false;
+  var movedByDrag = false;
 
   function visibleClasses() {
     return store.get().timetable.filter(function (c) { return !view.hiddenSubjects[c.subjectId]; });
@@ -103,6 +104,35 @@
   function isConflicting(id) {
     return conflictsOf(store.find('timetable', id).day)
       .some(function (p) { return p[0] === id || p[1] === id; });
+  }
+
+  /* Mover con botones: funciona también en móvil, donde el arrastre HTML5
+     no está disponible. Los conflictos se sinalizan en la propia tarjeta
+     (clase en rojo + panel de solapamientos) y en el aviso al solapar. */
+  function shiftClass(c, delta, startMin, endMin) {
+    var days = view.showWeekend ? 7 : 5;
+    var destino = (c.day + delta + days) % days;
+    var dur = U.timeToMinutes(c.end) - U.timeToMinutes(c.start);
+    var inicio = U.clamp(U.timeToMinutes(c.start), startMin, Math.max(startMin, endMin - dur));
+    store.updateRow('timetable', c.id, {
+      day: destino,
+      start: U.minutesToTime(inicio),
+      end: U.minutesToTime(Math.min(inicio + dur, 1440))
+    });
+    ui.toast(store.subjectName(c.subjectId) + ' movida al ' + U.DIAS[destino], 'success');
+    refresh();
+  }
+
+  function slideClass(c, delta, startMin, endMin) {
+    var dur = U.timeToMinutes(c.end) - U.timeToMinutes(c.start);
+    var inicio = U.clamp(U.timeToMinutes(c.start) + delta, startMin, Math.max(startMin, endMin - dur));
+    store.updateRow('timetable', c.id, {
+      day: c.day,
+      start: U.minutesToTime(inicio),
+      end: U.minutesToTime(Math.min(inicio + dur, 1440))
+    });
+    ui.toast(store.subjectName(c.subjectId) + ' a las ' + U.minutesToTime(inicio), 'success');
+    refresh();
   }
 
   /* Devuelve la clase de ese día que pisa el tramo [s,e), o null. */
@@ -192,6 +222,9 @@
     var todayIdx = U.dayIndex(new Date());
     var gridTpl = '64px repeat(' + days + ', minmax(0, 1fr))';
 
+    var colWidth = days >= 7 ? 96 : 128;
+    var bodyMinWidth = 64 + days * colWidth;
+
     var head = U.h('div.tt__head', { style: { gridTemplateColumns: gridTpl } }, [U.h('div.tt__corner', 'Hora')]);
     for (var d = 0; d < days; d++) {
       head.appendChild(U.h('div.tt__day' + (d === todayIdx ? '.tt__day--today' : ''), U.DIAS[d].slice(0, 3) + (d === todayIdx ? ' · hoy' : '')));
@@ -263,12 +296,12 @@
           var top = yOf(s);
           var height = Math.max(26, (e - s) / 60 * HOUR_H - 3);
           var color = store.subjectColor(c.subjectId);
-          col.appendChild(U.h('button.tt__class' + (isConflicting(c.id) ? '.tt__class--conflict' : ''), {
+          var card = U.h('button.tt__class' + (isConflicting(c.id) ? '.tt__class--conflict' : ''), {
             style: { top: top + 'px', height: height + 'px', borderLeftColor: color, background: 'color-mix(in srgb, ' + color + ' 12%, var(--surface))' },
             draggable: 'true',
             onclick: function (ev) {
-              ev.stopPropagation();
-              if (suppressClick) { suppressClick = false; return; }
+              if (suppressClick || movedByDrag) { suppressClick = false; movedByDrag = false; return; }
+              if (ev.target.closest('.tt__move')) return;
               openForm(c);
             },
             ondragstart: function (ev) { dragClass = c; ev.dataTransfer.effectAllowed = 'move'; },
@@ -280,8 +313,27 @@
             title: c.start + '–' + c.end + ' · ' + store.subjectName(c.subjectId)
           }, [
             U.h('strong', store.subjectName(c.subjectId)),
-            U.h('span', c.start.slice(0, 5) + '–' + c.end.slice(0, 5) + (c.room ? ' · ' + c.room : ''))
-          ]));
+            U.h('span', c.start.slice(0, 5) + '–' + c.end.slice(0, 5) + (c.room ? ' · ' + c.room : '')),
+            U.h('span.tt__moves', [
+              U.h('button.tt__move', {
+                type: 'button', title: 'Adelantar 15 minutos', 'aria-label': 'Adelantar ' + store.subjectName(c.subjectId) + ' 15 minutos',
+                onclick: function (ev) { ev.stopPropagation(); movedByDrag = true; slideClass(c, 15, startMin, endMin); }
+              }, U.icon('chev-down', 'tt__move--flip')),
+              U.h('button.tt__move', {
+                type: 'button', title: 'Retrasar 15 minutos', 'aria-label': 'Retrasar ' + store.subjectName(c.subjectId) + ' 15 minutos',
+                onclick: function (ev) { ev.stopPropagation(); movedByDrag = true; slideClass(c, -15, startMin, endMin); }
+              }, U.icon('chev-down')),
+              U.h('button.tt__move', {
+                type: 'button', title: 'Mover al día anterior', 'aria-label': 'Mover ' + store.subjectName(c.subjectId) + ' al día anterior',
+                onclick: function (ev) { ev.stopPropagation(); movedByDrag = true; shiftClass(c, -1, startMin, endMin); }
+              }, U.icon('chev-left')),
+              U.h('button.tt__move', {
+                type: 'button', title: 'Mover al día siguiente', 'aria-label': 'Mover ' + store.subjectName(c.subjectId) + ' al día siguiente',
+                onclick: function (ev) { ev.stopPropagation(); movedByDrag = true; shiftClass(c, 1, startMin, endMin); }
+              }, U.icon('chev-right'))
+            ])
+          ]);
+          col.appendChild(card);
         });
 
         /* Línea de "ahora" */
@@ -296,22 +348,33 @@
       })(day);
     }
 
+    var wrap = U.h('div.tt', { style: { '--tt-min-w': bodyMinWidth + 'px' } }, [head, body]);
+
+    function nuevoBoton(hueco) {
+      var hoy = U.dayIndex(new Date());
+      var dia = (view.showWeekend || hoy <= 4) ? hoy : 0;
+      var def = { day: dia, start: '09:00', end: '10:30' };
+      return U.h('button.btn.btn--primary.btn--sm', {
+        onclick: function () { openForm(null, def, !!hueco); }
+      }, [U.icon('plus'), 'Clase']);
+    }
+
     return U.h('div.card.card--flush', [
       U.h('div.row.row--between.row--wrap.gap-2', { style: { padding: '16px 18px' } }, [
         U.h('div', [
           U.h('h3', 'Horario semanal'),
-          U.h('p.tiny.soft', 'Haz clic en una franja para crear una clase · arrastra una clase para moverla')
+          U.h('p.tiny.soft', 'Haz clic en una franja para crear una clase · arrastra una clase o usa las flechas de su esquina para moverla')
         ]),
         U.h('div.row.gap-1', [
           U.h('div.segmented', [
             U.h('button', { class: view.showWeekend ? '' : 'is-active', onclick: function () { view.showWeekend = false; refresh(); } }, 'L–V'),
             U.h('button', { class: view.showWeekend ? 'is-active' : '', onclick: function () { view.showWeekend = true; refresh(); } }, 'L–D')
           ]),
-          U.h('button.btn.btn--primary.btn--sm', { onclick: function () { openForm(null, { day: U.dayIndex(new Date()), start: '09:00', end: '10:30' }); } }, [U.icon('plus'), 'Clase'])
+          nuevoBoton(true)
         ])
       ]),
       subjectFilterBar(),
-      store.get().timetable.length ? U.h('div.tt', [head, body]) : U.h('div.empty', { style: { margin: '8px 18px 18px' } }, [
+      store.get().timetable.length ? wrap : U.h('div.empty', { style: { margin: '8px 18px 18px' } }, [
         U.h('div.empty__icon', U.icon('clock')),
         U.h('h4', 'Todavía no tienes horario'),
         U.h('p', 'Añade tus clases de la semana y verás aquí las horas por asignatura, los solapamientos y las clases de cada día.'),
