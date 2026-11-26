@@ -117,7 +117,17 @@
   }
   .cal__event .icon { display: none; }
   .cal__event--more { background: var(--text-soft); }
+
+  /* El día seleccionado recupera sus títulos en chips (antes solo puntos). */
+  .cal-day-chips { display: flex; }
 }
+
+/* Títulos del día seleccionado bajo la rejilla (móvil y modo agenda). */
+.cal-day-chips { display: none; }
+.cal-day-chip { font: inherit; font-size: .74rem; cursor: pointer; max-width: 100%; }
+.cal-day-chip__time { opacity: .75; }
+.cal-day-chip__title { min-width: 0; }
+.cal-day-chip--more { cursor: default; }
 
 /* ================= Horario ================= */
 .tt-hint { display: none; }

@@ -30,6 +30,9 @@
   var dragMoved = false;
   var suppressClick = false;
 
+  var onResize = null;
+  var lastNarrow = null;
+
   /* ---------------- Datos ---------------- */
   function holidaysMap() {
     var regions = store.get().settings.holidayRegions || [];
@@ -97,7 +100,10 @@
     var wrap = U.h('div', [
       header(),
       U.h('div.grid.grid--split', { style: { '--split': '330px' } }, [
-        view.mode === 'month' ? monthGrid() : agendaList(),
+        U.h('div.col', [
+          view.mode === 'month' ? monthGrid() : agendaList(),
+          view.mode === 'month' && !isNarrow() ? null : dayChips()
+        ]),
         sidePanel()
       ])
     ]);
@@ -240,6 +246,30 @@
     });
 
     return grid;
+  }
+
+  /* En móvil la rejilla va en puntos: esta fila recupera los títulos del día
+     seleccionado, para que no haga falta bajar al panel del día. */
+  function dayChips() {
+    var iso = view.selected;
+    var evs = eventsOf(iso);
+    if (!evs.length) return null;
+    var chips = evs.map(function (e) {
+      var typeBadge = e.type === 'exam' ? 'rose' : e.type === 'class' ? 'sky' : e.type === 'deadline' ? 'amber' : e.type === 'study' ? 'mint' : 'outline';
+      return U.h('button.badge.badge--' + typeBadge + '.cal-day-chip', {
+        type: 'button',
+        title: e.title,
+        'aria-label': TYPES[e.type].label + ' · ' + e.title + (e.start ? ' · ' + e.start.slice(0, 5) : '') + ' · ' + U.fmtDate(iso, { weekday: true }),
+        onclick: function () { openEventForm(e); }
+      }, [
+        U.h('span.dot-color', { style: { background: TYPES[e.type].color } }),
+        e.start ? U.h('span.cal-day-chip__time.mono', e.start.slice(0, 5)) : null,
+        U.h('span.cal-day-chip__title.truncate', e.title)
+      ]);
+    });
+    var rest = evs.length - 3;
+    if (rest > 0) chips.push(U.h('span.badge.badge--outline.cal-day-chip.cal-day-chip--more', '+' + rest));
+    return U.h('div.row.row--wrap.gap-1.cal-day-chips', { style: { padding: '10px 2px 0' } }, chips);
   }
 
   function agendaList() {
@@ -456,10 +486,27 @@
     if (main && Studia.router.current() === 'calendar') render(main);
   }
 
+  /* Ancho a partir del cual la rejilla ya muestra los títulos en la celda. */
+  function isNarrow() {
+    return (window.matchMedia ? window.matchMedia('(max-width: 720px)') : { matches: window.innerWidth <= 720 }).matches;
+  }
+
   function init() {
     store.subscribe(function () {
       if (Studia.router.current() === 'calendar') refresh();
     });
+    if (!onResize) {
+      onResize = function () {
+        if (Studia.router.current() !== 'calendar') return;
+        var narrow = isNarrow();
+        if (narrow === lastNarrow) return;
+        lastNarrow = narrow;
+        var main = document.getElementById('appMain');
+        if (main) render(main);
+      };
+      window.addEventListener('resize', onResize);
+    }
+    lastNarrow = isNarrow();
   }
 
   Studia.modules = Studia.modules || {};
